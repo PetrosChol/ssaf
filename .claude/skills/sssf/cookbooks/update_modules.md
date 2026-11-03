@@ -14,7 +14,7 @@ Extend `adws/adw_modules/` with new low-level logic.
 | `agents.py` | `load_config`, `validate`, resolving an entry → coding-agent interface + model + thinking + harness extensions |
 | `runner.py` | the `Run` object; `run.phase(PhaseParams)` context manager; `ph.call(AgentCall)` |
 | `agent_pi.py` | the Pi interface (v1) — non-interactive `pi -p --mode json`, JSONL stream tailed live, model resolved against `~/.pi/agent/models.json`; `--session-id` creates-or-continues, so running and continuing an agent are the same call |
-| `agent_cc.py` | the Claude Code interface — stubbed in v1, lands in v2 |
+| `agent_cc.py` | the Claude Code interface: `claude -p --output-format stream-json --verbose`, the stream tailed live, `--session-id` to create and `--resume` to continue (tracked by a ledger in `cc_sessions/`), Pi tool names mapped, thinking → `--effort`, cost de-duplicated across resumes |
 | `gates.py` | validation gates over envelope claims |
 | `changes.py` | deterministic change capture: resolve the base ref, `git diff` into `context_handoff/changes.diff`, adapt the `ChangeSet` into an envelope an agent can be handed |
 | `prompts.py` | load system/user prompt refs from config, render placeholders |

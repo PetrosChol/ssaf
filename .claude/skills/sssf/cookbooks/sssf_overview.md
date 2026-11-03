@@ -23,7 +23,7 @@ adws/
 │   ├── data_types.py            AgentCall, PhaseParams, Phase, Envelope + one output type per agent call
 │   ├── agents.py                load_config, validate, resolve entry → interface + model + thinking
 │   ├── runner.py                the Run object: run.phase(PhaseParams) → ph.call(AgentCall)
-│   ├── agent_pi.py              Pi interface (v1)   ·   agent_cc.py  Claude Code (v2, stubbed)
+│   ├── agent_pi.py              Pi interface        ·   agent_cc.py  Claude Code interface
 │   ├── gates.py                 gate(envelope, run) -> GateReport — one check per item verified
 │   ├── changes.py               git diff vs a resolved base → ChangeSet → envelope for the documenter
 │   ├── prompts.py, session.py, tracer.py, console.py, git_helper.py, utils.py
@@ -37,7 +37,7 @@ adws/
     └── sssf.db                  gitignored SQLite trace db the visualizer polls
 ```
 
-**v1 runs Pi only.** `coding_agent: pi`, default model `gemini-3.6-flash`, thinking `medium`. `claude_code` is specced in the config and stubbed in the interface — it lands in v2.
+**Two backends.** `coding_agent: pi` is the default (model `gemini-3.6-flash`, thinking `medium`). `coding_agent: claude_code` runs that agent through `claude -p` instead, set per agent. See `references/config.md#claude-code-backend`.
 
 ## The phase model
 

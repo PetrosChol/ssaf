@@ -1,7 +1,12 @@
 # sssf.config.yaml — the factory's agent roster. One agent, one prompt, one purpose.
-# v1 runs the Pi coding agent only; coding_agent: claude_code arrives in v2.
+# Two coding agents: pi (default) and claude_code, set per agent. A claude_code agent:
+#   coding_agent: claude_code
+#   model: anthropic/claude-sonnet-5-5   # or sonnet | opus | haiku
+#   harness_engineering: []              # .json MCP configs / *settings.json only, no .ts
+#   tools: [...]                         # pi names map (read->Read, find->Glob, ...); drop subagent_*
+# See references/config.md#claude-code-backend in the sssf skill.
 defaults:
-  coding_agent: pi
+  coding_agent: pi                 # pi | claude_code
   model: google/gemini-3.6-flash   # provider/id — a bare pattern is ambiguous across providers
   thinking: medium                 # off | minimal | low | medium | high | xhigh | max
   harness_engineering: []          # pi extensions loaded into the harness (-e)

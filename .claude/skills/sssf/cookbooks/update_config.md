@@ -14,7 +14,19 @@ Edit the agent's entry in place:
 
 Write the model as `provider/model-id`, never a bare id. The same model is usually carried by several providers, and an ambiguous pattern raises in `agents.validate()` — grounding every agent that inherits it. See `references/config.md`.
 
-Thinking levels are Pi's reasoning effort: `off | minimal | low | medium | high | xhigh | max`. It only bites when the model is registered with `reasoning: true` in `~/.pi/agent/models.json`.
+Thinking levels are Pi's reasoning effort: `off | minimal | low | medium | high | xhigh | max`. It only bites when the model is registered with `reasoning: true` in `~/.pi/agent/models.json`. For a Claude Code agent the level maps to `--effort`.
+
+## Move an agent to Claude Code
+
+```yaml
+  - name: reviewer
+    coding_agent: claude_code
+    model: anthropic/claude-opus-5-5     # anthropic/<id> or sonnet | opus | haiku
+    harness_engineering: []              # .ts pi extensions cannot load; .json MCP/settings only
+    tools: [read, grep, find, ls, bash, write]   # Pi names map; drop subagent_* tools
+```
+
+`agents.validate()` rejects `.ts` extensions, unmapped Pi tool names and a missing `claude` binary before anything spawns. Changing `coding_agent` starts that agent on a fresh session. Full mapping: `references/config.md#claude-code-backend`.
 
 **A model change means a fresh session.** `agent_map.json` records the model each coding-agent session was created with. When a joined run (`--adw-id`) finds the config's model no longer matches the recorded one, that agent starts a **new** session rather than resuming — the map is updated, never a bad resume. Thinking changes do not invalidate a session; model changes do. Expect the agent to lose its accumulated context window on the first run after the change.
 

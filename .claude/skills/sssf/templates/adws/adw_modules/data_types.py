@@ -385,6 +385,11 @@ class PiRequest(BaseModel):
     cwd: str = "."                  # set from run.repo_root — the codebase root agents work in
 
 
+# Both backends (agent_pi, agent_cc) take and return the same shapes; the Pi
+# names stay for compatibility, these are the backend-neutral spellings.
+AgentRequest = PiRequest
+
+
 class UsageBreakdown(BaseModel):
     """Tokens and the dollars they cost, per component, summed over a call.
 
@@ -427,6 +432,28 @@ class UsageBreakdown(BaseModel):
         self.cache_write_cost += cost.get("cacheWrite") or 0.0
         self.total_cost += cost.get("total") or 0.0
 
+    def add_claude_code(self, usage: dict, cost: float) -> None:
+        """Fold in one Claude Code `result` event's usage for THIS run.
+
+        Claude Code's `usage` is the run's own sum over its API calls, with
+        `input_tokens` excluding cache reads — the same split pi reports.
+        Cost arrives only as a total (per-part costs stay 0), and the caller
+        passes this run's share of it, since Claude Code reports the whole
+        conversation's running total on a resumed session.
+        """
+        parts = {
+            "input_tokens": usage.get("input_tokens") or 0,
+            "output_tokens": usage.get("output_tokens") or 0,
+            "cache_read_tokens": usage.get("cache_read_input_tokens") or 0,
+            "cache_write_tokens": usage.get("cache_creation_input_tokens") or 0,
+        }
+        for field, value in parts.items():
+            setattr(self, field, getattr(self, field) + int(value))
+        details = usage.get("output_tokens_details") or {}
+        self.reasoning_tokens += int(details.get("thinking_tokens") or 0)
+        self.total_tokens += sum(int(v) for v in parts.values())
+        self.total_cost += cost
+
     def merge(self, other: "UsageBreakdown") -> None:
         """Add another call's usage — a phase that retries spends more than once."""
         for field in self.model_fields:
@@ -445,3 +472,6 @@ class PiResult(BaseModel):
     # visualizer's context bar measures against `context_window`.
     context_tokens: int = 0
     context_window: int = 0         # 0 when the registry declares no ceiling
+
+
+AgentResult = PiResult

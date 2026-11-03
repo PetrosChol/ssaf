@@ -35,7 +35,7 @@ Re-running is safe. `install.py` skips **every** file that already exists — yo
 
 ## Post-install checklist
 
-1. **Env** — `cp .env.sample .env`, then set `OPENROUTER_API_KEY` in `.env`. (v1 runs Pi; `ANTHROPIC_API_KEY` / `CLAUDE_CODE_PATH` are only needed once Claude Code lands in v2.)
+1. **Env** — `cp .env.sample .env`, then set `OPENROUTER_API_KEY` in `.env`. (Claude Code agents use the operator's own `claude` login or `ANTHROPIC_API_KEY`; set `CLAUDE_PATH` if `claude` is not on PATH.)
 2. **Pi is installed and on PATH** — `pi --version`. Set `PI_PATH` in `.env` if it is not.
 3. **The model resolves** — the config's default `gemini-3.6-flash` must be a registered id in `~/.pi/agent/models.json`. Check with `pi --list-models` or read the file directly; see `references/config.md` for model resolution.
 4. **Gitignore** — `install.py` appends `adws/adw_data/sessions/`, `adws/adw_data/sssf.db*`, and `.env` for you; confirm they landed. All three are runtime or secrets and must never be committed.

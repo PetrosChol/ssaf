@@ -1,5 +1,7 @@
 # Super Simple Software Factory
 
+> **Fork note:** this repo is [disler/super-simple-software-factory](https://github.com/disler/super-simple-software-factory) (MIT, imported at `de31374`) with an added **Claude Code backend**: `coding_agent: claude_code` is implemented, not stubbed. Its tests live in `.claude/skills/sssf/tests/`.
+
 > **Repeatable agents-plus-code workflows, packaged as one skill, stamped into any repo.**
 > Deterministic Python owns the graph. Coding agents are bounded nodes inside it.
 
@@ -58,7 +60,7 @@ Copy `.claude/skills/sssf/` into the target repo and type `/sssf install` inside
 
 ### Manual Install
 
-**Prereqs:** [`uv`](https://docs.astral.sh/uv/), [`pi`](https://github.com/mariozechner/pi-coding-agent), `sqlite3`, and an API key for whichever providers your roster names (see below). [`bun`](https://bun.sh) only if you want the visualizer.
+**Prereqs:** [`uv`](https://docs.astral.sh/uv/), [`pi`](https://github.com/mariozechner/pi-coding-agent), `sqlite3`, and an API key for whichever providers your roster names (see below). [`bun`](https://bun.sh) only if you want the visualizer. [Claude Code](https://code.claude.com) (`claude` on PATH, logged in or with `ANTHROPIC_API_KEY`) only for agents set to `coding_agent: claude_code`.
 
 ```bash
 # 1. get the skill into the target repo
@@ -148,7 +150,7 @@ There is no DSL here. No framework to learn. It is Python, YAML, agents, and a s
 
 ```yaml
 defaults:
-  coding_agent: pi                 # v1 runs pi only, claude_code is schema-valid and stubbed
+  coding_agent: pi                 # pi | claude_code, per agent
   model: google/gemini-3.6-flash   # provider/model-id, a bare id can match several providers
   thinking: medium                 # off | minimal | low | medium | high | xhigh | max
   protected_files:                 # no agent may edit the machinery that grades it
@@ -175,6 +177,8 @@ agents:
 Five starter agents ship in the box: `planner`, `builder`, `scout` (read-only recon), `reviewer`, and `documenter`. There is no tester, because running a suite is a known command and therefore code.
 
 Every agent gets its own model, thinking level, prompts, tools, and harness. That is the core four, and it is the whole surface you tune. Give the planner a frontier model and the builder a cheap fast one. Give the scout subagents. Give the reviewer no ability to write code at all.
+
+**Two coding agents.** Each agent runs on Pi (`coding_agent: pi`, the default) or on Claude Code (`coding_agent: claude_code`, through `claude -p --output-format stream-json`). One roster can mix them, and everything downstream (envelopes, gates, `writes:` rollback, the trace) treats them the same. A Claude Code agent names an Anthropic model (`anthropic/claude-sonnet-5-5`, or `sonnet` / `opus` / `haiku`). Pi tool names are mapped to Claude Code's, and `thinking` becomes `--effort`. `harness_engineering` takes MCP or settings JSON instead of `.ts` extensions. Full mapping in `references/config.md#claude-code-backend`.
 
 **`tools` is a capability list. `writes` is the boundary.** They are not the same thing, and the difference matters: `bash` runs anything, including `git checkout`, and `write` reaches any path. So "this agent changes nothing" is enforced in code, after every call, by comparing the repo before and after. Unauthorized changes are rolled back and the phase fails. A read-only agent is read-only with respect to your repo, never unable to write its own report.
 
@@ -362,7 +366,7 @@ Honest edges, because knowing them is cheaper than discovering them.
 | An agent edits something it should not | Detected and rolled back after the call, and the phase fails | Expected. Widen that agent's `writes` if the change was legitimate |
 | Commit phase has nothing to commit | `commit_all` raises if the cwd is not a git repo or nothing changed | `git init` with one commit first. A no-op build fails the phase rather than committing nothing |
 | `install.py --force` | Overwrites **all** stamped files, config and prompts included | Commit before you force |
-| `coding_agent: claude_code` | Schema-valid, but `agent_cc.py` raises | v1 is Pi only |
+| A `claude_code` agent inherits Pi-only config | `.ts` extensions and `subagent_*` tools have no Claude Code equivalent, so `agents.validate()` refuses to spawn | Drop them from that agent; see `references/config.md#claude-code-backend` |
 
 Also missing on purpose, so you know what to add: this runs on your current branch. For real work you want a branch per run, a sandbox around the agent, and a merge step at the end.
 
