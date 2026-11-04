@@ -6,6 +6,8 @@ The core four are context, model, tools and prompt. Claude Code covers the model
 - **Layer 1, on demand:** Context7 becomes an MCP tool that chosen agents can call whenever they hit an unknown API.
 - **Layer 2, fetched in advance:** a fixed code phase fetches docs for the libraries a run will touch, pinned to the repo's real versions, before any agent starts.
 
+**Both layers use the same Context7 MCP server** (`https://mcp.context7.com/mcp`), with the same key and the same two tools, `resolve-library-id` and `query-docs`. In Layer 1 the agent's model calls those tools. In Layer 2 Python code calls them directly through the official MCP Python SDK, with no model involved, so it stays a deterministic `kind="code"` phase. One endpoint and one tool contract means nothing can drift out of step between the layers.
+
 Rule 8 ("a known command is code") favours Layer 2. Layer 1 covers what Layer 2 can't predict. Pi agents keep working without Context7. Every lookup lands in the trace, and nothing loosens the `writes:` boundary.
 
 All paths are relative to `.claude/skills/sssf/`.
@@ -13,7 +15,8 @@ All paths are relative to `.claude/skills/sssf/`.
 ## Step 0 — Check the live API (needs network access)
 - Confirm the MCP tool names and parameters with `claude mcp`, by listing the server's tools. The ones expected are `resolve-library-id(libraryName, query)` and `query-docs(libraryId, query, language?)`.
 - Confirm the auth header the hosted server accepts: `Authorization: Bearer <key>`.
-- Read the REST API guide (`context7.com/docs/api-guide`) to pick Layer 2's transport. Prefer **REST via Python `urllib`**, which adds no dependencies. Fall back to the `ctx7` CLI (needs Node 22.13 or newer) if REST doesn't cover search plus docs.
+- Confirm that the MCP Python SDK (`mcp`, streamable-HTTP client) can connect, initialize, list the two tools and call `query-docs` from a plain script. Pin the SDK version that works.
+- Record the shape of the tool results (text content blocks), so `docs.py` parses what the server actually returns.
 - Confirm that `${CONTEXT7_API_KEY}` inside a `--mcp-config` file gets filled in from the environment. If it doesn't, `agent_cc` writes a resolved temp copy per run.
 
 ## Layer 1 — Context7 as an agent tool
@@ -50,14 +53,25 @@ context7:
   timeout_s: 30
 ```
 
-**Module:** `adw_modules/docs.py` (new). It follows the `quality.py` pattern: plain functions, typed results, an `as_envelope()` adapter.
+**Module:** `adw_modules/context7_client.py` (new) is a thin MCP client wrapper:
+- `open_session(cfg)` uses the MCP Python SDK's streamable-HTTP client against the configured server URL, sending the `Authorization: Bearer $CONTEXT7_API_KEY` header. One session is opened per phase and closed when the phase ends.
+- `resolve(session, name, query) -> library_id` calls `resolve-library-id`.
+- `query_docs(session, library_id, query, version) -> str` calls `query-docs` and joins the text content blocks.
+- It reads the same server URL as `context7.mcp.json`, so Layer 1 and Layer 2 can't point at different servers.
+- It's synchronous on the outside (an `asyncio.run` wrapper), so ADW scripts stay plain.
+
+**Module:** `adw_modules/docs.py` (new). It follows the `quality.py` pattern: plain functions, typed results, an `as_envelope()` adapter. It talks to Context7 only through `context7_client.py`.
 - `detect_libraries(run, cfg)`: reads the manifests and lockfiles (`package-lock.json`, `uv.lock`, `poetry.lock`) to get `{name: version}`. It keeps the configured `libraries` plus, when `from_request` is set, any manifest dependency whose name appears in the request text, using a plain word-boundary match.
-- `fetch(run, lib)`: calls `resolve` then `docs` with the request text as the query and the pinned version. It writes `context_handoff/docs/<name>@<version>.md`, with a header giving the source, library id, version and fetch time. It caches by `(id, version)` inside the session, so a run joined with `--adw-id` reuses the files.
+- `fetch(run, session, lib)`: calls `resolve` (skipped when `id` is configured) then `query_docs` over the MCP session, with the request text as the query and the pinned version. It writes `context_handoff/docs/<name>@<version>.md`, with a header giving the source, library id, version and fetch time. It caches by `(id, version)` inside the session, so a run joined with `--adw-id` reuses the files.
 - `capture(run) -> DocsResult`: the files written, plus per library `ok`, `skipped` or `error`.
 - `as_envelope(result) -> DocsOutput`: `artifacts` lists the doc files, and `notes_for_next_agent` says "read the docs under context_handoff/docs/ before using these libraries".
 - Network errors fail the phase with a clear message, never with empty docs. A per-library "not found" is recorded and skipped.
 
 **Types** (`data_types.py`): `DocsLibrary`, `DocsResult` and `DocsOutput(EnvelopeBase)`, where `DocsOutput` adds `libraries: list[str]`. This is code output, not an agent call, so the triad rule (type, `user.md` example, call site) doesn't apply.
+
+**Dependencies:** add `mcp` (the pinned version from Step 0) to the inline `# /// script` dependency list of only the ADWs that get a `docs` phase. No global installs, and Pi-only repos that never enable `context7` are unaffected.
+
+**Config:** `context7:` also takes `server_url` (default `https://mcp.context7.com/mcp`), used by both layers.
 
 **Workflows:** add a `docs` phase right after `request` in `adw_plan.py`, `adw_plan_build.py`, `adw_plan_build_test.py`, `adw_plan_build_test_quality.py` and `adw_simple_sdlc.py`. It runs only when `context7.enabled` is set:
 ```python
@@ -76,7 +90,8 @@ plan = ph.call(AgentCall(..., previous=docs.as_envelope(fetched)))
 
 ## Tests (`tests/test_context7.py`)
 - Library detection from fixture manifests and lockfiles, including request-text matching.
-- `fetch` and `capture` against a stubbed HTTP layer: caching, truncation, not-found, network failure leading to a failed phase.
+- `fetch` and `capture` against a stubbed `context7_client` (no network): caching, truncation, not-found, network failure leading to a failed phase.
+- `context7_client` against a local fake MCP server built with the SDK's own server classes: initialize, tool listing, `resolve-library-id` and `query-docs` round trips, and the auth header reaching the server.
 - `build_command` for an agent with `context7.mcp.json`: `--mcp-config`, `--strict-mcp-config`, and `mcp__context7` in `--allowedTools`.
 - An end-to-end `adw_plan` with a stubbed fetcher and the fake `claude`: a `docs` phase row, doc files in `context_handoff/docs/`, and the planner prompt containing the docs envelope.
 
@@ -86,4 +101,4 @@ plan = ph.call(AgentCall(..., previous=docs.as_envelope(fetched)))
 3. Re-run with `--adw-id`. The `docs` phase reports cache hits and makes no network calls.
 
 ## Out of scope
-Building the Pi extension integration, a self-hosted Context7, and Context7 for private or internal docs.
+Building the Pi extension integration, a self-hosted Context7, and Context7 for private or internal docs. Pi agents still benefit from Layer 2, because it is code, not an agent tool.
