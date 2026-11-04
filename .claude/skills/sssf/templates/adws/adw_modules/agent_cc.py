@@ -27,6 +27,13 @@ Where Claude Code differs from Pi, and how this module absorbs it:
 - Harness. Pi extensions (`.ts`) cannot load here. `harness_engineering`
   entries for a Claude Code agent are JSON: `*settings.json` files go to
   `--settings`, any other `.json` file to `--mcp-config`.
+- Context7 auth. `context7.mcp.json` ships with NO headers: in a Claude cloud
+  environment the egress proxy adds `Authorization` for mcp.context7.com, and
+  anonymous access works anywhere. Claude Code has no conditional header (an
+  unset `${CONTEXT7_API_KEY}` is sent literally), so when CONTEXT7_API_KEY IS
+  set, each run gets a temp copy of the config whose Context7 server carries
+  `Authorization: Bearer ${CONTEXT7_API_KEY}` — the placeholder, which Claude
+  Code fills from the environment. The key itself is never written to disk.
 """
 
 from __future__ import annotations
@@ -35,9 +42,11 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable, Optional
+from urllib.parse import urlparse
 
 from .agent_pi import ARG_VALUE_CHARS, RESULT_SNIPPET_CHARS, _clip, _label
 from .data_types import PiRequest, PiResult
@@ -142,6 +151,59 @@ def _mcp_server_names(paths: list[str]) -> list[str]:
     return names
 
 
+CONTEXT7_KEY_ENV = "CONTEXT7_API_KEY"
+CONTEXT7_AUTH = "Bearer ${" + CONTEXT7_KEY_ENV + "}"   # expanded by Claude Code, not by us
+
+
+def is_context7_server(name: str, server) -> bool:
+    if not isinstance(server, dict):
+        return False
+    host = (urlparse(str(server.get("url") or "")).hostname or "").lower()
+    return name == "context7" or host == "context7.com" or host.endswith(".context7.com")
+
+
+def _with_context7_auth(path: str) -> Optional[dict]:
+    """The config with an Authorization placeholder on its Context7 server(s),
+    or None when nothing needs adding (no Context7 server, or a header already set)."""
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    changed = False
+    for name, server in (servers or {}).items():
+        if not is_context7_server(name, server):
+            continue
+        headers = server.get("headers") or {}
+        if any(key.lower() == "authorization" for key in headers):
+            continue                          # the operator wrote their own
+        server["headers"] = {**headers, "Authorization": CONTEXT7_AUTH}
+        changed = True
+    return data if changed else None
+
+
+def prepare_mcp_configs(paths: list[str], scratch_dir: Optional[Path]) -> list[str]:
+    """MCP config paths to hand to `--mcp-config` for THIS run.
+
+    Unchanged unless CONTEXT7_API_KEY is set; then a Context7 server without
+    an Authorization header is given one, in a copy under `scratch_dir`.
+    """
+    if not os.environ.get(CONTEXT7_KEY_ENV, "").strip():
+        return list(paths)
+    prepared = []
+    for index, path in enumerate(paths):
+        data = _with_context7_auth(path)
+        if data is None:
+            prepared.append(path)
+            continue
+        if scratch_dir is None:
+            scratch_dir = Path(tempfile.mkdtemp(prefix="sssf-mcp-"))
+        copy = Path(scratch_dir) / f"{index:02d}_{Path(path).name}"
+        copy.write_text(json.dumps(data, indent=2))
+        prepared.append(str(copy))
+    return prepared
+
+
 def validate_agent(agent) -> list[str]:
     """Problems this backend can see before anything spawns."""
     problems = []
@@ -162,8 +224,13 @@ def validate_agent(agent) -> list[str]:
     return problems
 
 
-def build_command(request: PiRequest, resume: bool) -> list[str]:
-    """The exact argv for one non-interactive Claude Code turn."""
+def build_command(request: PiRequest, resume: bool,
+                  scratch_dir: Optional[Path] = None) -> list[str]:
+    """The exact argv for one non-interactive Claude Code turn.
+
+    `scratch_dir` receives per-run MCP config copies (see prepare_mcp_configs);
+    run() passes a temp dir it removes when the turn ends.
+    """
     _, model_id = resolve_model(request.model)
     cmd = [CLAUDE_PATH, "-p", "--output-format", "stream-json", "--verbose"]
     if BARE:
@@ -189,7 +256,7 @@ def build_command(request: PiRequest, resume: bool) -> list[str]:
     for path in settings:
         cmd += ["--settings", path]
     if mcp:
-        cmd += ["--mcp-config", *mcp, "--strict-mcp-config"]
+        cmd += ["--mcp-config", *prepare_mcp_configs(mcp, scratch_dir), "--strict-mcp-config"]
     # `--` ends the option list: --mcp-config is variadic, and a prompt that
     # starts with "-" must never be read as a flag.
     cmd += ["--", request.prompt]
@@ -359,9 +426,17 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
         on_spawn: Optional[Callable[[int], None]] = None,
         on_exit: Optional[Callable[[int], None]] = None) -> PiResult:
     """Run one non-interactive Claude Code turn — same contract as agent_pi.run."""
+    scratch = Path(tempfile.mkdtemp(prefix="sssf-cc-"))
+    try:
+        return _run(request, scratch, on_event, on_spawn, on_exit)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _run(request: PiRequest, scratch: Path, on_event, on_spawn, on_exit) -> PiResult:
     ledger_path = _ledger_path(request)
     ledger = _read_ledger(ledger_path)
-    cmd = build_command(request, resume=ledger is not None)
+    cmd = build_command(request, resume=ledger is not None, scratch_dir=scratch)
 
     raw_path = Path(request.raw_output_path)
     raw_path.parent.mkdir(parents=True, exist_ok=True)

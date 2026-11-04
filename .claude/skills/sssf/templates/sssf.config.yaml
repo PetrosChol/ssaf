@@ -5,6 +5,17 @@
 #   harness_engineering: []              # .json MCP configs / *settings.json only, no .ts
 #   tools: [...]                         # pi names map (read->Read, find->Glob, ...); drop subagent_*
 # See references/config.md#claude-code-backend in the sssf skill.
+#
+# Context7 (current, version-pinned library docs), two layers, one MCP server:
+#   Layer 1 — an agent tool. Per agent, load the MCP config and name its tools:
+#       harness_engineering: [..., adws/adw_data/harness_engineering/context7.mcp.json]
+#       tools: [..., mcp__context7]
+#     Claude Code agents only; a Pi agent ignores both entries and runs without it.
+#     planner, builder and reviewer below have it; scout and documenter do not.
+#   Layer 2 — the `docs` code phase, configured by `context7:` further down.
+#   Auth: none needed. CONTEXT7_API_KEY in .env raises the rate limit; in a Claude
+#   cloud environment a proxy secret for mcp.context7.com does the same.
+#   See references/config.md#context7.
 defaults:
   coding_agent: pi                 # pi | claude_code
   model: google/gemini-3.6-flash   # provider/id — a bare pattern is ambiguous across providers
@@ -41,6 +52,21 @@ observability:
   db: adws/adw_data/sssf.db        # tracer writes here directly; the UI polls it
   poll_ms: 500                     # visualizer live-poll cadence
 
+# Layer 2: before the planner starts, a `docs` code phase fetches docs for the
+# libraries this run touches, pinned to the versions the lockfile holds, into
+# context_handoff/docs/<name>@<version>.md. Runs in adw_plan, adw_plan_build,
+# adw_plan_build_test, adw_plan_build_test_quality and adw_simple_sdlc.
+context7:
+  enabled: true
+  server_url: https://mcp.context7.com/mcp   # same server as context7.mcp.json
+  libraries: []                    # always fetched, e.g. [{name: next.js, id: /vercel/next.js}]
+  from_request: true               # plus manifest deps the request names (word match)
+  manifests: [package.json, pyproject.toml, requirements.txt]
+  lockfiles: [package-lock.json, uv.lock, poetry.lock]
+  max_chars_per_library: 20000     # protects the context window
+  max_chars_total: 60000
+  timeout_s: 30
+
 agents:
   - name: planner
     model: fireworks/accounts/fireworks/models/kimi-k3
@@ -52,6 +78,7 @@ agents:
       user: adws/adw_data/prompt_engineering/planner/user.md
     harness_engineering:
       - adws/adw_data/harness_engineering/subagents.ts    # registers the four subagent_* tools below
+      - adws/adw_data/harness_engineering/context7.mcp.json   # Layer 1 (Claude Code only)
     writes:                        # the plan is the only thing it may leave in the repo
       - specs/
     tools:                         # full recon + write for plan.md; no edit — the planner never touches repo files
@@ -65,6 +92,7 @@ agents:
       - subagent_continue
       - subagent_list
       - subagent_remove
+      - mcp__context7              # Context7 docs lookups (Claude Code only)
 
   - name: builder
     color: "#22d3ee"
@@ -74,6 +102,8 @@ agents:
       user: adws/adw_data/prompt_engineering/builder/user.md
     # No `writes` key: unrestricted, and the only agent that is. It still cannot
     # touch defaults.protected_files — the builder does not get to edit its own grader.
+    harness_engineering:
+      - adws/adw_data/harness_engineering/context7.mcp.json   # Layer 1 (Claude Code only)
     tools:                         # the only agent that mutates the repo — everything on
       - read
       - grep
@@ -82,6 +112,7 @@ agents:
       - bash
       - edit
       - write
+      - mcp__context7
 
   - name: scout
     color: "#fbbf24"
@@ -118,6 +149,8 @@ agents:
       user: adws/adw_data/prompt_engineering/reviewer/user.md
     writes: []                     # a reviewer that cannot fix cannot quietly fix — the
                                    # claim the tool list only implied, now enforced
+    harness_engineering:
+      - adws/adw_data/harness_engineering/context7.mcp.json   # Layer 1 (Claude Code only)
     tools:                         # full read surface; write only for review.md, no edit
       - read
       - grep
@@ -125,6 +158,7 @@ agents:
       - ls
       - bash
       - write
+      - mcp__context7
 
   - name: documenter
     model: openai/gpt-5.6-luna

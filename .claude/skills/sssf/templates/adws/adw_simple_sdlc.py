@@ -1,13 +1,13 @@
 #!/usr/bin/env -S uv run
 # /// script
-# dependencies = ["pydantic", "python-dotenv", "pyyaml", "rich"]
+# dependencies = ["pydantic", "python-dotenv", "pyyaml", "rich", "mcp==2.3.0"]
 # ///
 """ADW Simple SDLC — plan, build, test, review, document, committing as it goes.
 
 Usage:
     uv run adws/adw_simple_sdlc.py "<prompt or path/to/prompt.md>" [--config adws/adw_sssf_config/sssf.config.yaml] [--adw-id a1b2c3d4]
 
-Phases: engineer(request) -> planner -> git(commit_plan)
+Phases: engineer(request) -> [code(docs)] -> planner -> git(commit_plan)
         -> builder -> code(test) [-> builder(fix) -> code(test) ... bounded]
         -> reviewer [-> builder(revise) -> reviewer ... bounded]
         -> code(retest, only if a revision changed code)
@@ -44,7 +44,7 @@ pinned before the first commit phase and printed in the request phase.
 import argparse
 import sys
 
-from adw_modules import agents, changes, gates, git_helper, quality, session, utils
+from adw_modules import agents, changes, docs, gates, git_helper, quality, session, utils
 from adw_modules.data_types import (AgentCall, BuildOutput, ChangeCapture,
                                     DocumentOutput, PhaseParams, PlanOutput,
                                     ReviewOutput)
@@ -60,7 +60,7 @@ DOCUMENT_NOTES = ("Read diff_path in full before writing. Document only what the
 
 def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
     cfg = agents.load_config(config)
-    agents.validate(cfg, REQUIRED_AGENTS)
+    agents.validate(cfg, REQUIRED_AGENTS, docs_phase=True)
     run = session.ensure(cfg, adw_id)
     baseline = git_helper.rev("HEAD")     # pinned before this run commits anything
 
@@ -79,9 +79,19 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                                description="Capture the incoming ask")) as ph:
         ph.log(input=prompt, baseline=git_helper.short_sha(baseline))
 
+    docs_envelope = None              # Layer 2: only when context7.enabled
+    if cfg.context7.enabled:
+        with run.phase(PhaseParams(name="docs", kind="code", owner="context7",
+                                   description="Fetch version-pinned library docs so no agent "
+                                               "plans against stale APIs")) as ph:
+            fetched = docs.capture(run, prompt)
+            ph.log(**docs.summary(fetched))
+            docs_envelope = docs.as_envelope(fetched)
+            docs.check(run, docs_envelope)
+
     with run.phase(PhaseParams(name="plan", kind="agent", owner="planner",
                                description="Turn the request into an implementable plan")) as ph:
-        plan = ph.call(AgentCall(output_type=PlanOutput, prompt=prompt,
+        plan = ph.call(AgentCall(output_type=PlanOutput, prompt=prompt, previous=docs_envelope,
                                  gates=[gates.artifacts_exist, gates.files_non_empty]))
 
     with run.phase(PhaseParams(name="commit_plan", kind="code", owner="git",

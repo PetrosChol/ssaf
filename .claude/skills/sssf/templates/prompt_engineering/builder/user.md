@@ -18,6 +18,8 @@
 
 Implement the work described in `prompt`, guided by `previous_envelope` if present, then emit your `Report` JSON.
 
+If `<context_handoff_dir>/docs/` exists, read the files for the libraries you touch.
+
 ## Report
 
 Respond with ONLY valid JSON matching `BuildOutput` — no prose before or after:

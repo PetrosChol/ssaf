@@ -234,6 +234,18 @@ class ChangesOutput(EnvelopeBase):
     diff_path: str = ""             # read this for the full diff
 
 
+class DocsOutput(EnvelopeBase):
+    """The docs phase's result, shaped as an envelope for the next agent.
+
+    Code output, not an agent call: Python fetched these files through the
+    Context7 MCP server, so the triad rule (type, user.md example, call site)
+    does not apply. `artifacts` lists the doc files; `libraries` names what
+    they cover as `name@version`.
+    """
+
+    libraries: list[str] = Field(default_factory=list)
+
+
 class VerifyOutput(EnvelopeBase):
     """A deterministic result, shaped as an envelope so an agent can consume it.
 
@@ -245,6 +257,36 @@ class VerifyOutput(EnvelopeBase):
 
     passed: bool = False
     failures: list[str] = Field(default_factory=list)
+
+
+# ── Library docs (Context7, deterministic) ───────────────────────────────────
+
+DocsStatus = Literal["ok", "cached", "skipped", "error"]
+
+
+class DocsLibrary(BaseModel):
+    """One library the docs phase looked at, and what became of it."""
+
+    name: str                       # as the manifest (or config) spells it
+    version: Optional[str] = None   # pinned version; None = latest docs
+    version_source: str = ""        # "uv.lock", "package.json", ... — where the pin came from
+    ecosystem: str = ""             # "python" | "npm" | "" (configured, not in a manifest)
+    requested_by: Literal["config", "request"] = "request"
+    library_id: str = ""            # Context7 id, as configured or resolved
+    status: DocsStatus = "skipped"
+    path: str = ""                  # context_handoff/docs/<name>@<version>.md
+    chars: int = 0
+    truncated: bool = False
+    note: str = ""                  # why skipped / errored, or the server's version note
+
+
+class DocsResult(BaseModel):
+    """Everything the docs phase did: per-library outcomes and its Context7 spend."""
+
+    libraries: list[DocsLibrary] = Field(default_factory=list)
+    artifacts: list[str] = Field(default_factory=list)
+    context7_calls: int = 0         # MCP tool calls made by THIS run (0 on a full cache hit)
+    cache_hits: int = 0
 
 
 # ── Agent calls ──────────────────────────────────────────────────────────────
@@ -343,9 +385,46 @@ class ObservabilityConfig(BaseModel):
     poll_ms: int = 500
 
 
+CONTEXT7_SERVER_URL = "https://mcp.context7.com/mcp"
+
+
+class Context7Library(BaseModel):
+    """A library the docs phase always fetches. `id` skips resolution."""
+
+    name: str
+    id: Optional[str] = None        # e.g. /vercel/next.js
+
+
+class Context7Config(BaseModel):
+    """The optional `context7:` section — Layer 2, the docs code phase.
+
+    Layer 1 (Context7 as an agent tool) is per agent, through the
+    `context7.mcp.json` harness file; both layers talk to `server_url`.
+    """
+
+    enabled: bool = False
+    server_url: str = CONTEXT7_SERVER_URL
+    libraries: list[Context7Library] = Field(default_factory=list)   # always fetched
+    from_request: bool = True       # also fetch manifest deps the request names
+    manifests: list[str] = Field(default_factory=lambda: [
+        "package.json", "pyproject.toml", "requirements.txt"])
+    lockfiles: list[str] = Field(default_factory=lambda: [
+        "package-lock.json", "uv.lock", "poetry.lock"])
+    max_chars_per_library: int = 20_000    # protects the context window
+    max_chars_total: int = 60_000          # across every library in one run
+    timeout_s: int = 30
+
+    @field_validator("libraries", mode="before")
+    @classmethod
+    def _bare_names(cls, value):
+        """`libraries: [next.js]` is shorthand for `[{name: next.js}]`."""
+        return [{"name": v} if isinstance(v, str) else v for v in value or []]
+
+
 class SSSFConfig(BaseModel):
     defaults: ConfigDefaults = Field(default_factory=ConfigDefaults)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
+    context7: Context7Config = Field(default_factory=Context7Config)
     agents: list[AgentConfig] = Field(default_factory=list)
 
 

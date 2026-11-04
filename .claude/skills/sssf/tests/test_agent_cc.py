@@ -1,7 +1,7 @@
 """Tests for the Claude Code backend and the backend switch in agents.py.
 
 Run from the repo root:
-    uv run --with pytest,pydantic,pyyaml,python-dotenv,rich pytest .claude/skills/sssf/tests -q
+    uv run --with pytest,pydantic,pyyaml,python-dotenv,rich,mcp==2.3.0 pytest .claude/skills/sssf/tests -q
 """
 
 from __future__ import annotations

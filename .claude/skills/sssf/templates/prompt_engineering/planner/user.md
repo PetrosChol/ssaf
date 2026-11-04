@@ -18,6 +18,8 @@
 
 Plan the work described in `prompt`.
 
+If `previous_envelope` lists docs under `<context_handoff_dir>/docs/`, read the ones for the libraries the plan touches, and cite the APIs of THAT version in the plan.
+
 1. Write the full plan to `<context_handoff_dir>/plan.md` — this is the copy the builder reads.
 2. Copy that file into the repo under `specs/`:
    - **List `specs/` before you pick the name.** A session that plans more than once reuses its `<adw_id>`, so the obvious name may already be taken.

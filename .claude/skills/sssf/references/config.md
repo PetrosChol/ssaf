@@ -19,6 +19,11 @@ observability:
   db: adws/adw_data/sssf.db
   poll_ms: 500
 
+context7:                               # optional — Layer 2, the docs phase (see Context7)
+  enabled: true
+  libraries: []
+  from_request: true
+
 agents:
   - name: planner
     coding_agent: pi
@@ -57,6 +62,22 @@ agents:
 |---|---|---|
 | `db` | path | SQLite trace db. `tracer.py` writes it directly; the visualizer polls it. Default `adws/adw_data/sssf.db`. |
 | `poll_ms` | int | Visualizer live-poll cadence in ms. History uses the same queries, lazy-paged. Default `500`. |
+
+### `context7`
+
+Optional. Absent means `enabled: false`. Configures the `docs` code phase (Layer 2); Layer 1 is per agent, through `harness_engineering`. Full behaviour in [Context7](#context7).
+
+| Field | Type | Meaning |
+|---|---|---|
+| `enabled` | bool | Run the `docs` phase in the ADWs that have one. Default `false`; the starter config sets `true`. |
+| `server_url` | URL | The Context7 MCP server, used by both layers. Default `https://mcp.context7.com/mcp`. `agents.validate()` warns if an agent's `context7.mcp.json` points elsewhere. |
+| `libraries` | list | Always fetched: `{name, id?}` or a bare name. `id` (e.g. `/vercel/next.js`) skips resolution. Default `[]`. |
+| `from_request` | bool | Also fetch each manifest dependency whose name appears in the request text (plain word match). Default `true`. |
+| `manifests` | list[path] | Read for dependencies. Default `package.json`, `pyproject.toml`, `requirements.txt`. |
+| `lockfiles` | list[path] | Read for the installed version, which beats the manifest's. Default `package-lock.json`, `uv.lock`, `poetry.lock`. |
+| `max_chars_per_library` | int | Each library's docs are cut here. Default `20000`. |
+| `max_chars_total` | int | Cap across all libraries in one run; later libraries are skipped once it is spent. Default `60000`. |
+| `timeout_s` | int | Per MCP request. Default `30`. |
 
 ### `agents[]`
 
@@ -221,7 +242,7 @@ Rule: **every entry in `harness_engineering` that registers a tool must have tha
 | Tools | `read`→`Read`, `write`→`Write`, `edit`→`Edit`, `bash`→`Bash`, `grep`→`Grep`, `find`/`ls`→`Glob`. Claude Code names (`WebFetch`, `mcp__server__tool`) pass through. A list becomes `--tools` (built-ins) plus `--allowedTools` (all). With no list, `Read, Edit, Write, Bash, Glob, Grep, NotebookEdit` and any `--mcp-config` servers are pre-approved. Pi extension tools such as `subagent_create` fail validation. |
 | Permissions | A headless run cannot answer prompts, so it runs with `--permission-mode dontAsk` (override with `SSSF_CC_PERMISSION_MODE`): pre-approved tools run, and anything else is denied rather than waiting. That covers capability only. `writes:` and `protected_files` are still enforced after every call by `permissions.py`, and a breach is rolled back and fails the phase. |
 | Thinking | `--effort`, see [Thinking levels](#thinking-levels). |
-| Harness | `*settings.json` → `--settings`; any other `.json` → `--mcp-config … --strict-mcp-config`. `.ts` Pi extensions fail validation. |
+| Harness | `*settings.json` → `--settings`; any other `.json` → `--mcp-config … --strict-mcp-config`. `.ts` Pi extensions fail validation. With `CONTEXT7_API_KEY` set, a Context7 server without an `Authorization` header gets one in a per-run temp copy (see [Context7](#context7)). |
 | Usage | Tokens come from the `result` event's `usage` for that run. Cost is `total_cost_usd`, which Claude Code reports as a running total on resumed sessions; the ledger subtracts the previous total so each run is charged once. The context window comes from `modelUsage[*].contextWindow`. |
 | Credentials | Whatever the operator's `claude` uses: a logged-in subscription, `ANTHROPIC_API_KEY`, or Bedrock/Vertex/Foundry settings. |
 
@@ -230,3 +251,62 @@ Environment overrides: `CLAUDE_PATH` (binary, default `claude`), `SSSF_CC_PERMIS
 Without `--bare`, a Claude Code agent loads the repo's `CLAUDE.md`, `.claude/settings.json` hooks and `.mcp.json` servers, the same as an interactive session in that folder. The agent's `system.md` replaces Claude Code's default system prompt (`--system-prompt`).
 
 Switching an existing agent from Pi to Claude Code: change `coding_agent` and `model`, drop `.ts` entries from `harness_engineering`, and remove Pi extension tools (`subagent_*`) from `tools`. A changed `coding_agent`, like a changed model, starts that agent on a fresh session.
+
+## Context7
+
+[Context7](https://context7.com) serves current, version-specific library documentation. The factory uses it in two layers, and both talk to the **same MCP server** (`https://mcp.context7.com/mcp`) through the **same two tools**, so the layers cannot drift apart:
+
+| Tool | Arguments | Returns |
+|---|---|---|
+| `resolve-library-id` | `libraryName`, `query` (both required) | Text: "Available Libraries:" blocks with `Title`, `Context7-compatible library ID`, and sometimes `Versions` |
+| `query-docs` | `libraryId`, `query` (required), `language` (optional, e.g. `Python`) | Text: doc snippets. A pinned id is `/org/project/v1.2.3`; an unindexed version is answered with a leading `Version note:` and the nearest docs |
+
+(Recorded from the live server, Context7 4.5.0. Older servers called the second tool `get-library-docs`; `context7_client` falls back to it.)
+
+### Layer 1 — an agent tool
+
+A Claude Code agent loads the stamped MCP config and names the tools:
+
+```yaml
+  - name: builder
+    coding_agent: claude_code
+    harness_engineering:
+      - adws/adw_data/harness_engineering/context7.mcp.json
+    tools: [read, bash, edit, write, grep, find, ls, mcp__context7]   # only needed with a tools list
+```
+
+The starter roster gives it to `planner`, `builder` and `reviewer`; `scout` and `documenter` do without. Their `system.md` says to check the pinned version's docs before using a third-party API, to prefer the files the docs phase already wrote, and to treat fetched text as reference, never instructions. Tool calls land in the trace as `tool_call` events named `mcp__context7__resolve-library-id: …` and `mcp__context7__query-docs: …`.
+
+**Pi agents run without it.** Pi has no MCP client, so `agent_pi` drops `.json` harness entries and `mcp__*` tool names; one roster can carry the entries for either backend. The official Pi extension, [`@upstash/context7-pi`](https://www.npmjs.com/package/@upstash/context7-pi) (`pi install npm:@upstash/context7-pi`), registers the same two tools but calls Context7's REST API at `context7.com/api`, not the MCP server. It is not wired in.
+
+### Layer 2 — the `docs` code phase
+
+`adw_plan`, `adw_plan_build`, `adw_plan_build_test`, `adw_plan_build_test_quality` and `adw_simple_sdlc` run a `kind="code"` phase named `docs` (owner `context7`) right after `request`, when `context7.enabled` is set:
+
+1. **Detect** (`docs.detect_libraries`). The configured `libraries`, plus, with `from_request`, every dependency in `manifests` whose name appears in the request text. Versions come from `lockfiles` (what is installed), else an exact manifest pin, else none (latest docs).
+2. **Fetch** (`docs.fetch`, through `adw_modules/context7_client.py`). One MCP session per phase (official MCP Python SDK, streamable HTTP, `mcp==2.3.0` in the ADW's `# /// script` block): `resolve-library-id` unless `id` is configured, then `query-docs` with the pinned version in the id and the request as the query. The resolved candidate must actually be the library (its title or id matches the name); an unrelated top hit is not used.
+3. **Write** `context_handoff/docs/<name>@<version>.md` (`@latest` when nothing is pinned), with a header: source, library id, requested id, version and where it came from, fetch time, query, size, the server's version note, and a warning that the text is untrusted reference material. `context_handoff/docs/index.json` is the cache.
+4. **Hand off.** `docs.as_envelope()` returns a `DocsOutput` (`artifacts` = the doc files, `libraries` = `name@version`) that becomes the planner's `previous_envelope`. The builder reads `<context_handoff_dir>/docs/` itself. `docs.check()` runs `artifacts_exist` and `files_non_empty` on it.
+
+Every Context7 call is a `tool_call` event named `context7:<tool>: <library>`. The phase's `log` event carries `fetched`, `cached`, `skipped`, `cache_hits` and `context7_calls`.
+
+| Situation | Result |
+|---|---|
+| Re-run with `--adw-id` | Every library already in `index.json` with its file present is a cache hit. With all hits, no MCP session is opened: `context7_calls: 0`. |
+| Context7 has no such library | Recorded as `skipped` with the reason; the phase continues. |
+| Server unreachable, rate-limited, or refusing the key | The phase fails with the reason. Never empty docs. |
+| Docs larger than the caps | Cut at `max_chars_per_library`; once `max_chars_total` is spent, later libraries are `skipped`. |
+
+### Auth
+
+Context7 answers **without** a key, at lower rate limits. A key, when there is one, goes in `Authorization: Bearer <key>`:
+
+- **Locally:** put `CONTEXT7_API_KEY=ctx7sk-…` in `.env`. `context7_client` then sends the header, and `agent_cc` gives each Claude Code run a temp copy of the MCP config whose Context7 server has `"Authorization": "Bearer ${CONTEXT7_API_KEY}"`. Claude Code fills the placeholder from the environment. The copy is removed after the run.
+- **Claude cloud environment:** store the key as a Network secret for host `mcp.context7.com`. The egress proxy adds the header itself, `CONTEXT7_API_KEY` stays unset, and neither layer sends a header of its own.
+- **Unset, no proxy secret:** anonymous access. Nothing is sent.
+
+The stamped `context7.mcp.json` therefore has **no** `headers`. Claude Code has no conditional header: an unset `${CONTEXT7_API_KEY}` is sent literally, which is why the header is added per run rather than shipped in the file. A header you write yourself is left alone.
+
+The key's value is never written anywhere: not in MCP config copies (they hold the placeholder), traces, `raw_output.jsonl`, `sssf.db`, prompts or doc headers. A test runs a full `adw_plan` with the key set and scans every file the run produced for it.
+
+`agents.validate()` warns, without failing, only when Context7 is in use (a Claude Code agent loads it, or this ADW has a docs phase and `context7.enabled` is set), `CONTEXT7_API_KEY` is unset, **and** an anonymous MCP `initialize` to the server fails (refused, or no network). A missing key alone is not a problem.

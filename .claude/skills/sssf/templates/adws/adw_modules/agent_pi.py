@@ -223,10 +223,15 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
         "--session-dir", request.session_dir,
         "--system-prompt", request.system_prompt,
     ]
-    if request.tools:
-        cmd += ["--tools", ",".join(request.tools)]
+    # Pi has no MCP client: MCP configs (.json) and mcp__* tool names are
+    # Claude Code-only, so one roster can enable Context7 for an agent on
+    # either backend. A Pi agent simply runs without it.
+    tools = [t for t in request.tools or [] if not t.startswith("mcp__")]
+    if tools:
+        cmd += ["--tools", ",".join(tools)]
     for extension in request.extensions:
-        cmd += ["-e", extension]
+        if not extension.endswith(".json"):
+            cmd += ["-e", extension]
     cmd.append(request.prompt)
 
     raw_path = Path(request.raw_output_path)

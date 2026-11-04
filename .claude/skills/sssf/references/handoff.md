@@ -134,6 +134,8 @@ The `## Report` section shows the exact JSON shape of the declared output type �
 adws/adw_data/sessions/{adw_id}/
 ├── agent_map.json          agent name → coding-agent session_id + model
 ├── context_handoff/        the ONE place agents write files for the agents that follow
+│   └── docs/               version-pinned library docs from the Context7 docs phase
+│                           (<name>@<version>.md + index.json, the cache a rejoin reuses)
 └── {agent_name}/
     ├── prompts/            exact prompts sent (system.md + user.md), saved before execution
     ├── pi_sessions/        pi's own session state for this agent

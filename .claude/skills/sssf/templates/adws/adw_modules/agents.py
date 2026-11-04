@@ -10,13 +10,14 @@ disposes.
 from __future__ import annotations
 
 import json
+import sys
 import uuid
 from pathlib import Path
 from typing import Optional
 
 import yaml
 
-from . import agent_cc, agent_pi, permissions, prompts
+from . import agent_cc, agent_pi, context7_client, permissions, prompts
 from .data_types import (AgentCall, AgentConfig, EnvelopeBase, EventRecord,
                          GateCheck, GateReport, Phase, PiRequest, PiResult, SSSFConfig,
                          UsageBreakdown)
@@ -67,9 +68,61 @@ def resolve(cfg: SSSFConfig, name: str) -> AgentConfig:
                      f"available: {[a.name for a in cfg.agents]}")
 
 
-def validate(cfg: SSSFConfig, required: list[str]) -> None:
-    """Fail fast: every required name must resolve to a usable agent."""
+def _context7_urls(agent: AgentConfig) -> list[str]:
+    """URLs of the Context7 servers a Claude Code agent loads through its MCP configs."""
+    if agent.coding_agent != "claude_code":
+        return []                          # Pi has no MCP client; it runs without Layer 1
+    urls = []
+    for entry in agent.harness_engineering or []:
+        if not entry.endswith(".json") or entry.endswith("settings.json"):
+            continue
+        try:
+            servers = json.loads(Path(entry).read_text()).get("mcpServers") or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        urls += [str(server.get("url") or "") for name, server in servers.items()
+                 if agent_cc.is_context7_server(name, server)]
+    return urls
+
+
+def context7_warnings(cfg: SSSFConfig, agents_used: list[AgentConfig],
+                      docs_phase: bool = False) -> list[str]:
+    """Non-fatal Context7 notes. Context7 works without a key, so a missing
+    CONTEXT7_API_KEY is only worth saying when the server cannot be reached
+    without one (no proxy-injected key, anonymous access refused, or no network)."""
+    layer1 = {agent.name: _context7_urls(agent) for agent in agents_used}
+    layer1 = {name: urls for name, urls in layer1.items() if urls}
+    layer2 = docs_phase and cfg.context7.enabled
+    if not (layer1 or layer2):
+        return []
+    warnings = []
+    if layer2:
+        for name, urls in layer1.items():
+            for url in urls:
+                if url and url != cfg.context7.server_url:
+                    warnings.append(f"agent {name!r}: its Context7 MCP server {url} differs from "
+                                    f"context7.server_url {cfg.context7.server_url} — Layer 1 and "
+                                    f"Layer 2 would read different servers")
+    if not context7_client.api_key():
+        url = cfg.context7.server_url if layer2 else next(
+            (u for urls in layer1.values() for u in urls if u), context7_client.DEFAULT_SERVER_URL)
+        reason = context7_client.probe(url)
+        if reason:
+            users = ", ".join(sorted(layer1) + (["docs phase"] if layer2 else []))
+            warnings.append(f"Context7 ({users}): {url} is not usable without a key ({reason}) — "
+                            f"set CONTEXT7_API_KEY in .env, or give the environment's proxy a "
+                            f"secret for its host")
+    return warnings
+
+
+def validate(cfg: SSSFConfig, required: list[str], docs_phase: bool = False) -> list[str]:
+    """Fail fast: every required name must resolve to a usable agent.
+
+    Returns the non-fatal warnings it printed (Context7 reachability).
+    `docs_phase=True` is passed by ADWs that run the Context7 docs phase.
+    """
     problems = []
+    usable: list[AgentConfig] = []
     for name in required:
         try:
             agent = resolve(cfg, name)
@@ -91,8 +144,13 @@ def validate(cfg: SSSFConfig, required: list[str]) -> None:
             driver.resolve_model(agent.model)
         except ValueError as e:
             problems.append(f"agent {name!r}: {e}")
+        usable.append(agent)
     if problems:
         raise SystemExit("config validation failed:\n- " + "\n- ".join(problems))
+    warnings = context7_warnings(cfg, usable, docs_phase)
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    return warnings
 
 
 # ── execution ────────────────────────────────────────────────────────────────

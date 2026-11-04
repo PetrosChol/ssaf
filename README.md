@@ -1,6 +1,10 @@
 # Super Simple Software Factory
 
-> **Fork note:** this repo is [disler/super-simple-software-factory](https://github.com/disler/super-simple-software-factory) (MIT, imported at `de31374`) with an added **Claude Code backend**: `coding_agent: claude_code` is implemented, not stubbed. Its tests live in `.claude/skills/sssf/tests/`.
+> **Fork note:** this repo is [disler/super-simple-software-factory](https://github.com/disler/super-simple-software-factory) (MIT, imported at `de31374`) with two additions: a **Claude Code backend** (`coding_agent: claude_code` is implemented, not stubbed) and a **Context7 integration** (version-pinned library docs, as an agent tool and as a `docs` code phase). Tests live in `.claude/skills/sssf/tests/`:
+>
+> ```bash
+> uv run --with pytest,pydantic,pyyaml,python-dotenv,rich,mcp==2.3.0 pytest .claude/skills/sssf/tests -q
+> ```
 
 > **Repeatable agents-plus-code workflows, packaged as one skill, stamped into any repo.**
 > Deterministic Python owns the graph. Coding agents are bounded nodes inside it.
@@ -100,6 +104,8 @@ The starter roster deliberately mixes providers to show the point, so out of the
 
 **Want one key instead of three?** Delete the per-agent `model:` lines and let every agent inherit `defaults.model`. The whole roster then runs on one provider. Cheapest way to get a first green run.
 
+**Context7 needs no key.** It answers anonymously at lower rate limits. Set `CONTEXT7_API_KEY` in `.env` to send `Authorization: Bearer <key>`; in a Claude cloud environment, store the key as a Network secret for `mcp.context7.com` instead, and the proxy adds the header.
+
 One sharp edge worth knowing: `agents.validate()` checks that a model is *written* as `provider/id`, not that the provider is reachable or that its key is set. A missing key does not fail at startup. It fails when that agent runs, partway into a chain.
 
 
@@ -179,6 +185,8 @@ Five starter agents ship in the box: `planner`, `builder`, `scout` (read-only re
 Every agent gets its own model, thinking level, prompts, tools, and harness. That is the core four, and it is the whole surface you tune. Give the planner a frontier model and the builder a cheap fast one. Give the scout subagents. Give the reviewer no ability to write code at all.
 
 **Two coding agents.** Each agent runs on Pi (`coding_agent: pi`, the default) or on Claude Code (`coding_agent: claude_code`, through `claude -p --output-format stream-json`). One roster can mix them, and everything downstream (envelopes, gates, `writes:` rollback, the trace) treats them the same. A Claude Code agent names an Anthropic model (`anthropic/claude-sonnet-5-5`, or `sonnet` / `opus` / `haiku`). Pi tool names are mapped to Claude Code's, and `thinking` becomes `--effort`. `harness_engineering` takes MCP or settings JSON instead of `.ts` extensions. Full mapping in `references/config.md#claude-code-backend`.
+
+**Library docs from Context7, in two layers.** Agents otherwise write code against whatever library knowledge their model happens to have. Layer 1 makes the Context7 MCP server an agent tool: a Claude Code agent loads `context7.mcp.json` and gets `resolve-library-id` and `query-docs` (the planner, builder and reviewer have it in the starter roster). Layer 2 is code: before the planner starts, a `docs` phase reads the repo's manifests and lockfiles, takes the dependencies the request names, and fetches their docs **for the versions the lockfile pins** into `context_handoff/docs/<name>@<version>.md`, through the same MCP server via the MCP Python SDK. A rejoined run reuses the files and makes no calls. Details in `references/config.md#context7`.
 
 **`tools` is a capability list. `writes` is the boundary.** They are not the same thing, and the difference matters: `bash` runs anything, including `git checkout`, and `write` reaches any path. So "this agent changes nothing" is enforced in code, after every call, by comparing the repo before and after. Unauthorized changes are rolled back and the phase fails. A read-only agent is read-only with respect to your repo, never unable to write its own report.
 
@@ -297,7 +305,7 @@ super-simple-software-factory/          # the deployable factory, and nothing el
     └── templates/                      # EXACTLY what install.py stamps
         ├── sssf.config.yaml            # the starter roster
         ├── prompt_engineering/{agent}/ # system.md + user.md per agent
-        ├── harness_engineering/        # pi extensions
+        ├── harness_engineering/        # pi extensions + context7.mcp.json
         └── adws/
             ├── adw_*.py                # the twelve starter workflows
             └── adw_modules/            # ALL low-level logic, ADW scripts stay thin
@@ -329,6 +337,8 @@ uv run adws/adw_*.py "<prompt or path/to/prompt.md>" [--config adws/adw_sssf_con
 | `adw_plan_build_test_quality` | same, plus lint/typecheck/build gates | the repo has quality commands worth enforcing |
 | `adw_document` | code(git diff), documenter | write up what just shipped |
 | `adw_simple_sdlc` | plan, build, test, review, document | the work is real and its shape is not obvious |
+
+With `context7.enabled` (the starter default), every chain that starts with a planner (`adw_plan`, `adw_plan_build`, `adw_plan_build_test`, `adw_plan_build_test_quality`, `adw_simple_sdlc`) first runs a `docs` code phase, which does nothing when the request names no dependency.
 
 `adw_simple_sdlc` lands three commits from three authors. The plan, the code, and the write-up each get their own, and each message is the words of the agent that produced it.
 
@@ -366,6 +376,8 @@ Honest edges, because knowing them is cheaper than discovering them.
 | An agent edits something it should not | Detected and rolled back after the call, and the phase fails | Expected. Widen that agent's `writes` if the change was legitimate |
 | Commit phase has nothing to commit | `commit_all` raises if the cwd is not a git repo or nothing changed | `git init` with one commit first. A no-op build fails the phase rather than committing nothing |
 | `install.py --force` | Overwrites **all** stamped files, config and prompts included | Commit before you force |
+| The docs phase fails | Context7 was unreachable, rate-limited, or refused the key. The phase fails on purpose rather than hand the planner empty docs | Check the network allowlist for `mcp.context7.com`, set `CONTEXT7_API_KEY`, or set `context7.enabled: false` |
+| A Pi agent never calls Context7 | Pi has no MCP client, so `context7.mcp.json` and `mcp__context7` are ignored for Pi agents | Switch that agent to `coding_agent: claude_code`; the `docs` phase still feeds Pi agents |
 | A `claude_code` agent inherits Pi-only config | `.ts` extensions and `subagent_*` tools have no Claude Code equivalent, so `agents.validate()` refuses to spawn | Drop them from that agent; see `references/config.md#claude-code-backend` |
 
 Also missing on purpose, so you know what to add: this runs on your current branch. For real work you want a branch per run, a sandbox around the agent, and a merge step at the end.

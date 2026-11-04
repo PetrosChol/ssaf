@@ -74,3 +74,5 @@ Deep specs, when needed: [references/config.md](references/config.md) · [refere
 ## v1 scope
 
 Two coding agents: Pi (`coding_agent: pi`, the default; model `gemini-3.6-flash` via openrouter, thinking `medium`) and Claude Code (`coding_agent: claude_code`, `anthropic/<model>` or an alias, see `references/config.md#claude-code-backend`). They can be set per agent and mixed in one run. The visualizer app ships in a later pass — observe via sqlite queries until then.
+
+Context7 (current, version-pinned library docs), two layers on one MCP server: Claude Code agents can call it as a tool (`context7.mcp.json` in `harness_engineering`; planner, builder and reviewer in the starter roster), and the plan ADWs run a `docs` code phase that fetches docs for the libraries a request names, pinned to the lockfile, into `context_handoff/docs/`. No key needed; `CONTEXT7_API_KEY` or a proxy secret raises the rate limit. See `references/config.md#context7`.

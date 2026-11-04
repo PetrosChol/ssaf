@@ -1,13 +1,13 @@
 #!/usr/bin/env -S uv run
 # /// script
-# dependencies = ["pydantic", "python-dotenv", "pyyaml", "rich"]
+# dependencies = ["pydantic", "python-dotenv", "pyyaml", "rich", "mcp==2.3.0"]
 # ///
 """ADW Plan Build Test Quality — full agent chain plus deterministic quality.
 
 Usage:
     uv run adws/adw_plan_build_test_quality.py "<prompt or path/to/prompt.md>" [--config adws/adw_sssf_config/sssf.config.yaml] [--adw-id a1b2c3d4]
 
-Phases: engineer(request) -> planner -> builder -> [code(verify) -> code(test) -> builder(fix)] bounded -> git(commit)
+Phases: engineer(request) -> [code(docs)] -> planner -> builder -> [code(verify) -> code(test) -> builder(fix)] bounded -> git(commit)
 
 Verify and test are CODE, not agents. Their commands are known, so running them
 needs no judgement — only repairing them does. A failing block does not fail its
@@ -19,7 +19,7 @@ fails the run.
 import argparse
 import sys
 
-from adw_modules import agents, gates, git_helper, quality, session, utils
+from adw_modules import agents, docs, gates, git_helper, quality, session, utils
 from adw_modules.data_types import AgentCall, BuildOutput, PhaseParams, PlanOutput
 
 REQUIRED_AGENTS = ["planner", "builder"]
@@ -28,16 +28,26 @@ MAX_FIX_LOOPS = 3
 
 def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
     cfg = agents.load_config(config)
-    agents.validate(cfg, REQUIRED_AGENTS)
+    agents.validate(cfg, REQUIRED_AGENTS, docs_phase=True)
     run = session.ensure(cfg, adw_id)
 
     with run.phase(PhaseParams(name="request", kind="engineer", owner=run.engineer,
                                description="Capture the incoming ask")) as ph:
         ph.log(input=prompt)
 
+    docs_envelope = None              # Layer 2: only when context7.enabled
+    if cfg.context7.enabled:
+        with run.phase(PhaseParams(name="docs", kind="code", owner="context7",
+                                   description="Fetch version-pinned library docs so no agent "
+                                               "plans against stale APIs")) as ph:
+            fetched = docs.capture(run, prompt)
+            ph.log(**docs.summary(fetched))
+            docs_envelope = docs.as_envelope(fetched)
+            docs.check(run, docs_envelope)
+
     with run.phase(PhaseParams(name="plan", kind="agent", owner="planner",
                                description="Turn the request into an implementable plan")) as ph:
-        plan = ph.call(AgentCall(output_type=PlanOutput, prompt=prompt,
+        plan = ph.call(AgentCall(output_type=PlanOutput, prompt=prompt, previous=docs_envelope,
                                  gates=[gates.artifacts_exist, gates.files_non_empty]))
 
     with run.phase(PhaseParams(name="build", kind="agent", owner="builder",
