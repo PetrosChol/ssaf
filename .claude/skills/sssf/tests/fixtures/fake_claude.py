@@ -16,7 +16,7 @@ import uuid
 
 argv = sys.argv[1:]
 if os.environ.get("FAKE_CLAUDE_ARGV_LOG"):
-    with open(os.environ["FAKE_CLAUDE_ARGV_LOG"], "a") as log:
+    with open(os.environ["FAKE_CLAUDE_ARGV_LOG"], "a", encoding="utf-8") as log:
         log.write(json.dumps(argv) + "\n")
 
 session = (argv[argv.index("--resume") + 1] if "--resume" in argv
@@ -40,7 +40,7 @@ if target:
           "message": {"role": "assistant", "usage": usage, "content": [
               {"type": "tool_use", "id": "toolu_fake_1", "name": "Write",
                "input": {"file_path": target, "content": "x = 1\n"}}]}})
-    with open(target, "w") as handle:
+    with open(target, "w", encoding="utf-8") as handle:
         handle.write("x = 1\n")
     emit({"type": "user", "parent_tool_use_id": None,
           "message": {"role": "user", "content": [

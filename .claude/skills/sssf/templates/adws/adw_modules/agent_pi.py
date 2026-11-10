@@ -46,7 +46,7 @@ def _pi_catalog() -> list[tuple[str, str, int]]:
     try:
         result = subprocess.run(
             [PI_PATH, "--list-models"], capture_output=True, text=True,
-            timeout=30, env=operator_env(), check=False,
+            timeout=30, env=operator_env(), check=False, encoding="utf-8", errors="replace",
         )
     except (OSError, subprocess.TimeoutExpired):
         return []
@@ -110,7 +110,7 @@ def context_window(provider: str, model_id: str) -> int:
     # models.json only exists once a custom model is registered; built-in
     # providers need none, so a missing or unreadable file is not an error.
     try:
-        registry = json.loads(Path(MODELS_JSON).read_text())
+        registry = json.loads(Path(MODELS_JSON).read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         registry = {}
     if not isinstance(registry, dict):
@@ -255,10 +255,10 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, bufsize=1, cwd=request.cwd,
-                               env=operator_env())
+                               env=operator_env(), encoding="utf-8", errors="replace")
     if on_spawn:
         on_spawn(process.pid)
-    with raw_path.open("a") as raw:
+    with raw_path.open("a", encoding="utf-8") as raw:
         assert process.stdout is not None
         for line in process.stdout:
             raw.write(line)

@@ -246,7 +246,10 @@ def stamped_repo(tmp_path):
 
 
 def _adw(repo: Path, *args: str, **env: str) -> subprocess.CompletedProcess:
-    full_env = {**os.environ, "CLAUDE_PATH": str(FAKE_CLAUDE), **env}
+    full_env = {**os.environ, "CLAUDE_PATH": str(FAKE_CLAUDE),
+                # No text I/O may fall back to the platform codepage (see test_encoding.py).
+                "PYTHONWARNDEFAULTENCODING": "1", "PYTHONWARNINGS": "error::EncodingWarning",
+                **env}
     return subprocess.run([sys.executable, "adws/adw_prompt.py", *args],
                           cwd=repo, env=full_env, capture_output=True, text=True, timeout=120)
 

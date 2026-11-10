@@ -472,13 +472,21 @@ def docs_repo(tmp_path, fake_context7):
 
 
 def _plan(repo: Path, *args: str, **env: str) -> subprocess.CompletedProcess:
-    full_env = {**os.environ, "CLAUDE_PATH": str(FAKE_CLAUDE), **env}
+    full_env = {**os.environ, "CLAUDE_PATH": str(FAKE_CLAUDE),
+                # Any text I/O left to the platform codepage is an error here
+                # (on Windows that codepage cannot hold what agents return).
+                "PYTHONWARNDEFAULTENCODING": "1", "PYTHONWARNINGS": "error::EncodingWarning",
+                **env}
     return subprocess.run([sys.executable, "adws/adw_plan.py", *args], cwd=repo, env=full_env,
                           capture_output=True, text=True, timeout=180)
 
 
 def test_adw_plan_runs_a_docs_phase_then_rejoins_from_the_cache(docs_repo, fake_context7, tmp_path):
     log = tmp_path / "argv.jsonl"
+    # What crashed the docs phase on a Windows cp1253 machine: an emoji in the
+    # fetched docs. Greek text too, which that codepage CAN hold, so a file
+    # written in it would silently differ from one written in UTF-8.
+    fake_context7.doc_body = "### Depends \U0001f446\n\nΠαράδειγμα: use Depends().\n"
     prompt = "Add a FastAPI health endpoint that returns a pydantic model"
     first = _plan(docs_repo, prompt, "--adw-id", "docs0001",
                   FAKE_CLAUDE_ARGV_LOG=str(log), CONTEXT7_API_KEY=SECRET)
@@ -487,6 +495,8 @@ def test_adw_plan_runs_a_docs_phase_then_rejoins_from_the_cache(docs_repo, fake_
     session = docs_repo / "adws" / "adw_data" / "sessions" / "docs0001"
     files = sorted(p.name for p in (session / "context_handoff" / "docs").glob("*.md"))
     assert files == ["fastapi@0.115.6.md", "pydantic@2.11.7.md"]
+    fastapi_doc = (session / "context_handoff" / "docs" / files[0]).read_text(encoding="utf-8")
+    assert "\U0001f446" in fastapi_doc and "Παράδειγμα" in fastapi_doc
     assert set(fake_context7.auth_seen) == {f"Bearer {SECRET}"}   # the key reached the server
     calls_after_first = len(fake_context7.calls)
     assert calls_after_first == 4

@@ -5,12 +5,25 @@ from __future__ import annotations
 import os
 import secrets
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Every file and pipe this factory touches is UTF-8, said explicitly at each
+# call: Python's default is the platform codepage (cp1252, cp1253, ... on
+# Windows), which cannot hold what agents and Context7 return — an emoji in
+# fetched docs used to crash the docs phase. Output to a console or a
+# redirected log in such a codepage degrades to "?" instead of crashing.
+for _stream in (sys.stdout, sys.stderr):
+    if (getattr(_stream, "encoding", "") or "").lower().replace("-", "") != "utf8":
+        try:
+            _stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
 
 def operator_env() -> dict[str, str]:
@@ -57,7 +70,7 @@ def resolve_prompt(arg: str) -> str:
     try:
         p = Path(arg)
         if p.is_file():
-            return p.read_text()
+            return p.read_text(encoding="utf-8-sig")
     except OSError:
         pass
     return arg
@@ -69,7 +82,7 @@ def engineer_name() -> str:
         return name
     try:
         out = subprocess.run(["git", "config", "user.name"],
-                             capture_output=True, text=True, timeout=5)
+                             capture_output=True, text=True, timeout=5, encoding="utf-8", errors="replace")
         if out.returncode == 0 and out.stdout.strip():
             return out.stdout.strip()
     except OSError:

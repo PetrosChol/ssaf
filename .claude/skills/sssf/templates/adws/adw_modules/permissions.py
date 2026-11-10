@@ -50,7 +50,7 @@ class PermissionBreach(RuntimeError):
 
 
 def _git(args: list[str], cwd) -> str:
-    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return result.stdout if result.returncode == 0 else ""
 
 
@@ -178,7 +178,7 @@ def _in_commit(run, commit: str, path: str) -> bool:
     if not commit:
         return False
     result = subprocess.run(["git", "cat-file", "-e", f"{commit}:{path}"],
-                            cwd=run.repo_root, capture_output=True, text=True)
+                            cwd=run.repo_root, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return result.returncode == 0
 
 
@@ -204,11 +204,11 @@ def _roll_back(run, path: str, before: dict[str, str], after: dict[str, str]) ->
     head = getattr(before, "head", "")
     if _in_commit(run, head, path):
         result = subprocess.run(["git", "checkout", head, "--", path],
-                                cwd=run.repo_root, capture_output=True, text=True)
+                                cwd=run.repo_root, capture_output=True, text=True, encoding="utf-8", errors="replace")
         return "rolled back" if result.returncode == 0 else "could not roll back"
     # The path did not exist when the phase started: remove it, staged or not.
     subprocess.run(["git", "rm", "--cached", "-q", "-f", "--ignore-unmatch", "--", path],
-                   cwd=run.repo_root, capture_output=True, text=True)
+                   cwd=run.repo_root, capture_output=True, text=True, encoding="utf-8", errors="replace")
     try:
         (Path(run.repo_root) / path).unlink(missing_ok=True)
         return "deleted"

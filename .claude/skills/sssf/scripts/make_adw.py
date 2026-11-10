@@ -107,7 +107,7 @@ def main() -> int:
         print(f"{dest} already exists — use --force to overwrite")
         return 1
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(body)
+    dest.write_text(body, encoding="utf-8")
     print(f"wrote {dest}")
     print("next: replace each phase description — a generated one says nothing, "
           "and the description is the only intent the trace ever shows")

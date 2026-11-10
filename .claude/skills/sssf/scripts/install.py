@@ -50,10 +50,10 @@ def stamp(src: Path, dest: Path, force: bool, stamped: list, skipped: list) -> N
 
 def ensure_gitignore(root: Path, stamped: list) -> None:
     gitignore = root / ".gitignore"
-    existing = gitignore.read_text().splitlines() if gitignore.exists() else []
+    existing = gitignore.read_text(encoding="utf-8-sig").splitlines() if gitignore.exists() else []
     missing = [e for e in GITIGNORE_ENTRIES if e not in existing]
     if missing:
-        with gitignore.open("a") as f:
+        with gitignore.open("a", encoding="utf-8") as f:
             f.write("\n# sssf runtime\n" + "\n".join(missing) + "\n")
         stamped.append(f"{gitignore} (+{len(missing)} entries)")
 

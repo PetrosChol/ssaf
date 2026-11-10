@@ -144,7 +144,7 @@ def _mcp_server_names(paths: list[str]) -> list[str]:
     names = []
     for path in paths:
         try:
-            servers = json.loads(Path(path).read_text()).get("mcpServers", {}) or {}
+            servers = json.loads(Path(path).read_text(encoding="utf-8-sig")).get("mcpServers", {}) or {}
         except (OSError, ValueError, AttributeError):
             continue
         names.extend(servers.keys())
@@ -166,7 +166,7 @@ def _with_context7_auth(path: str) -> Optional[dict]:
     """The config with an Authorization placeholder on its Context7 server(s),
     or None when nothing needs adding (no Context7 server, or a header already set)."""
     try:
-        data = json.loads(Path(path).read_text())
+        data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return None
     servers = data.get("mcpServers") if isinstance(data, dict) else None
@@ -199,7 +199,7 @@ def prepare_mcp_configs(paths: list[str], scratch_dir: Optional[Path]) -> list[s
         if scratch_dir is None:
             scratch_dir = Path(tempfile.mkdtemp(prefix="sssf-mcp-"))
         copy = Path(scratch_dir) / f"{index:02d}_{Path(path).name}"
-        copy.write_text(json.dumps(data, indent=2))
+        copy.write_text(json.dumps(data, indent=2), encoding="utf-8")
         prepared.append(str(copy))
     return prepared
 
@@ -271,14 +271,14 @@ def _ledger_path(request: PiRequest) -> Path:
 
 def _read_ledger(path: Path) -> Optional[dict]:
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return None
 
 
 def _write_ledger(path: Path, entry: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(entry, indent=2))
+    path.write_text(json.dumps(entry, indent=2), encoding="utf-8")
 
 
 # ── stream parsing ──────────────────────────────────────────────────────────
@@ -446,11 +446,11 @@ def _run(request: PiRequest, scratch: Path, on_event, on_spawn, on_exit) -> PiRe
     process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, bufsize=1, cwd=request.cwd,
-                               env=operator_env())
+                               env=operator_env(), encoding="utf-8", errors="replace")
     if on_spawn:
         on_spawn(process.pid)
     state = StreamState()
-    with raw_path.open("a") as raw:
+    with raw_path.open("a", encoding="utf-8") as raw:
         assert process.stdout is not None
         for line in process.stdout:
             raw.write(line)
