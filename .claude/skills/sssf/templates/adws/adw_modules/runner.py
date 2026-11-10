@@ -54,13 +54,13 @@ class Run:
         self.session_dir = ensure_dir(Path(cfg.defaults.data_dir) / "sessions" / adw_id)
         self.context_handoff_dir = ensure_dir(self.session_dir / "context_handoff")
         self._agent_map_path = self.session_dir / "agent_map.json"
-        self.agent_map: dict = (json.loads(self._agent_map_path.read_text())
+        self.agent_map: dict = (json.loads(self._agent_map_path.read_text(encoding="utf-8-sig"))
                                 if self._agent_map_path.exists() else {})
 
     # ── agent map (adw_id -> per-agent coding-agent session ids) ────────────
     def save_agent_map(self, agent: str, entry: dict) -> None:
         self.agent_map[agent] = entry
-        self._agent_map_path.write_text(json.dumps(self.agent_map, indent=2))
+        self._agent_map_path.write_text(json.dumps(self.agent_map, indent=2), encoding="utf-8")
 
     # ── usage (run totals mirror what the tracer accumulates in sqlite) ─────
     def add_usage(self, tokens: int, cost: float) -> None:

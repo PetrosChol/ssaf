@@ -52,6 +52,12 @@ def _placeholder(name: str) -> list[str]:
                     f"replace this echo with the real {name} command"]
 
 
+def _decoded(output) -> str:
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output or ""
+
+
 def _check_dir(run, name: str) -> Path:
     seq = run.phases[-1].seq if run.phases else 0
     path = run.context_handoff_dir / "quality" / f"{seq:02d}_{name}"
@@ -78,15 +84,16 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
             env=env,
             capture_output=True,
             text=True,
-            timeout=spec.timeout_seconds,
+            timeout=spec.timeout_seconds, encoding="utf-8", errors="replace",
         )
         returncode = completed.returncode
         stdout = completed.stdout
         stderr = completed.stderr
     except subprocess.TimeoutExpired as error:
         returncode = 124
-        stdout = error.stdout or ""
-        stderr = (error.stderr or "") + f"\nTimed out after {spec.timeout_seconds}s."
+        # A timeout hands back whatever was captured as BYTES, text=True or not.
+        stdout = _decoded(error.stdout)
+        stderr = _decoded(error.stderr) + f"\nTimed out after {spec.timeout_seconds}s."
     except OSError as error:
         # A missing binary lands here as exit 127 with the real message — no
         # pre-flight probe needed, and none wanted.
@@ -96,7 +103,7 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
     duration = time.monotonic() - clock
     output_artifact.write_text(
         f"$ {command}\nexit: {returncode}\nduration_seconds: {duration:.3f}\n"
-        f"\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}\n"
+        f"\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}\n", encoding="utf-8"
     )
     passed = returncode == 0
     run.tracer.event(EventRecord(

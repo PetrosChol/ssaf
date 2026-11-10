@@ -88,14 +88,14 @@ def _requirement(spec: str) -> Optional[tuple[str, Optional[str]]]:
 
 def _toml(path: Path) -> dict:
     try:
-        return tomllib.loads(path.read_text())
+        return tomllib.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, tomllib.TOMLDecodeError):
         return {}
 
 
 def _json(path: Path) -> dict:
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -104,7 +104,7 @@ def _json(path: Path) -> dict:
 def _python_manifest(path: Path) -> list[tuple[str, Optional[str]]]:
     if path.name.endswith(".txt"):
         try:
-            lines = path.read_text().splitlines()
+            lines = path.read_text(encoding="utf-8-sig").splitlines()
         except OSError:
             return []
         return [r for r in map(_requirement, lines) if r]
@@ -245,7 +245,7 @@ def _load_index(run) -> dict:
 def _save_index(run, index: dict) -> None:
     path = docs_dir(run) / INDEX
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(index, indent=2, sort_keys=True))
+    path.write_text(json.dumps(index, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _traced_call(run, session, tool: str, label: str, fn: Callable):
@@ -314,7 +314,7 @@ def fetch(run, session, lib: DocsLibrary, cfg: Context7Config, budget: int,
     chars = min(len(text), cap)
     path = docs_dir(run) / f"{_slug(lib)}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_header(lib, cfg, docs, requested_id, query, chars, len(text)) + body)
+    path.write_text(_header(lib, cfg, docs, requested_id, query, chars, len(text)) + body, encoding="utf-8")
     return lib.model_copy(update={"status": "ok", "library_id": docs.library_id,
                                   "path": str(path), "chars": chars,
                                   "truncated": chars < len(text),
