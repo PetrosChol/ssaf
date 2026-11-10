@@ -58,6 +58,8 @@ The bill for skipping this is not only tokens. It is cost, speed, and consistenc
 
 Two steps: get the skill into your repo, then stamp the factory.
 
+A step-by-step guide for Linux, macOS and Windows, with the prerequisites and a troubleshooting table, is in [`docs/installation-guide.pdf`](docs/installation-guide.pdf).
+
 ### Agentic Install
 
 Copy `.claude/skills/sssf/` into the target repo and type `/sssf install` inside Claude Code. The skill is named `sssf`, so that is the skill name followed by the `install` argument. There is no bare `/install` command. The agent reads the skill's own `cookbooks/install.md` and does the rest.
@@ -369,6 +371,7 @@ Honest edges, because knowing them is cheaper than discovering them.
 |---|---|---|
 | The test phase reports green on a fresh install | `quality.py` ships placeholder commands that exit 0. Three ADWs run them as their test phase | Wire your real commands into `quality.py` before trusting `adw_build_test`, `adw_plan_build_test`, or `adw_simple_sdlc`. This is the first thing to customize |
 | A bare model pattern | The same model sits under several providers, so `gemini-3.6-flash` matches three catalog entries and `agents.validate()` refuses to spawn | Always write `provider/model-id` |
+| `just` fails on Windows with a shell error | The `justfile` runs recipes through Git for Windows' `sh` (`set windows-shell := ["C:/Program Files/Git/bin/sh.exe", "-cu"]`) | Install Git for Windows, or edit that line if yours is not under `C:/Program Files/Git` |
 | `just` is not installed | The stamped `justfile` is a convenience wrapper, nothing depends on it | Every recipe is a one-line `uv run` or `sqlite3` command. Open the justfile and run the line yourself |
 | A coding agent hangs silently | No events, no tokens, an empty `raw_output.jsonl`. The trace goes quiet rather than red, until `timeout_s` (default one hour per send) kills the agent and fails the phase | Lower `timeout_s`, or kill the ADW's pid from `just procs <adw_id>`: the run takes its agent and everything the agent started down with it, and finalizes its own trace to `fail` |
 | The synced triad drifts | Type, `## Report` example, and `output_type=` disagree, so every call burns correction rounds | Grep the type name and fix all three in one edit |

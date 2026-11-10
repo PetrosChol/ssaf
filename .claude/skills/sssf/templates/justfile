@@ -8,6 +8,12 @@
 set dotenv-load
 set positional-arguments
 
+# On Windows, run every recipe with Git for Windows' sh instead of PowerShell or
+# cmd, so the recipes below behave the same on every OS. Needs Git for Windows
+# at its default location; edit the path if yours is elsewhere. Ignored on
+# Linux and macOS, which use sh already.
+set windows-shell := ["C:/Program Files/Git/bin/sh.exe", "-cu"]
+
 # Every recipe passes this through, so `SSSF_CONFIG=other.yaml just sdlc "..."`
 # swaps the whole roster for one run.
 config := env_var_or_default("SSSF_CONFIG", "adws/adw_sssf_config/sssf.config.yaml")
@@ -29,9 +35,9 @@ default:
 demo:
     @echo "1/2  adw_prompt: one agent, one prompt"
     uv run adws/adw_prompt.py --config {{config}} --agent scout "reply with a one-line summary of this repo"
-    @echo "\n2/2  adw_scout: read-only recon"
+    @printf '\n2/2  adw_scout: read-only recon\n'
     uv run adws/adw_scout.py --config {{config}} "list the top-level directories in this repo and what each is for. change nothing."
-    @echo "\nboth done. now run:  just sessions    (or: just obs)"
+    @printf '\nboth done. now run:  just sessions    (or: just obs)\n'
 
 # ── run a workflow ──────────────────────────────────────────────────────────
 # Args pass straight through: "<prompt or path/to/prompt.md>" [--adw-id X]
@@ -87,23 +93,21 @@ procs ADW_ID:
 # The skill is looked for in this repo first, then in your home directory (a
 # globally installed skill); SSSF_SKILL_DIR overrides both. The API server is
 # stopped when the UI exits, so Ctrl-C leaves nothing holding port 4600.
+#
+# Written as ONE shell line, not a #! script: windows-shell applies to recipe
+# lines only, so this is what keeps `just obs` working on Windows as well.
 
 # boot the trace UI, http://localhost:4601 (api on :4600)
 obs:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    skill="${SSSF_SKILL_DIR:-}"
-    for candidate in "{{justfile_directory()}}/.claude/skills/sssf" "$HOME/.claude/skills/sssf"; do
-        if [ -z "$skill" ] && [ -d "$candidate/apps/visualizer" ]; then skill="$candidate"; fi
-    done
-    if [ -z "$skill" ] || [ ! -d "$skill/apps/visualizer" ]; then
-        echo "sssf skill not found: looked in .claude/skills/sssf here and in ~/.claude/skills/sssf." >&2
-        echo "Set SSSF_SKILL_DIR to the skill's directory." >&2
-        exit 1
-    fi
-    cd "$skill/apps/visualizer"
-    bun install
-    SSSF_DB="{{justfile_directory()}}/{{db}}" bun run server/index.ts &
-    api=$!
-    trap 'kill "$api" 2>/dev/null || true' EXIT
-    bunx vite
+    skill="${SSSF_SKILL_DIR:-}"; \
+    for candidate in "{{justfile_directory()}}/.claude/skills/sssf" "$HOME/.claude/skills/sssf"; do \
+        if [ -z "$skill" ] && [ -d "$candidate/apps/visualizer" ]; then skill="$candidate"; fi; \
+    done; \
+    if [ -z "$skill" ] || [ ! -d "$skill/apps/visualizer" ]; then \
+        echo "sssf skill not found: looked in .claude/skills/sssf here and in ~/.claude/skills/sssf. Set SSSF_SKILL_DIR to the skill's directory." >&2; \
+        exit 1; \
+    fi; \
+    cd "$skill/apps/visualizer" && bun install && \
+    { SSSF_DB="{{justfile_directory()}}/{{db}}" bun run server/index.ts & api=$!; \
+      trap 'kill "$api" 2>/dev/null || true' EXIT; \
+      bunx vite; }
