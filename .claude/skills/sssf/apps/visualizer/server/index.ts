@@ -9,6 +9,7 @@
  *   bun run server/index.ts
  *   bun run server/index.ts --db /path/to/repo/adws/adw_data/sssf.db
  *   SSSF_DB=/path/to/sssf.db PORT=4600 bun run server/index.ts
+ *   HOST=0.0.0.0 bun run server/index.ts      (default 127.0.0.1, loopback only)
  */
 import { existsSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
@@ -16,6 +17,10 @@ import { SssfDb, resolveDbPath } from "./db.ts";
 import type { AgentPrompts, ApiError, HealthResponse } from "../shared/types.ts";
 
 const PORT = Number(process.env.PORT ?? 4600);
+// Loopback only by default: a trace holds full prompts and tool output, which
+// can include secrets, and Bun's own default (0.0.0.0) would publish it to the
+// whole network. Set HOST=0.0.0.0 to expose it deliberately.
+const HOST = process.env.HOST ?? "127.0.0.1";
 const DIST_DIR = resolve(import.meta.dir, "..", "dist");
 
 const dbPath = resolveDbPath();
@@ -112,6 +117,7 @@ async function serveStatic(req: Request): Promise<Response> {
 
 const server = Bun.serve({
   port: PORT,
+  hostname: HOST,
   routes: {
     "/api/health": safely(
       () =>
@@ -198,7 +204,7 @@ const server = Bun.serve({
   },
 });
 
-console.log(`[sssf] visualizer api  http://localhost:${server.port}`);
+console.log(`[sssf] visualizer api  http://${server.hostname}:${server.port}`);
 console.log(`[sssf] db              ${db.path}  [journal_mode=${db.journalMode}]`);
 console.log(
   existsSync(DIST_DIR)

@@ -6,6 +6,7 @@ Behaviour is steered by environment variables so one script covers every case:
     FAKE_CLAUDE_ARGV_LOG   append this call's argv (one JSON list per line)
     FAKE_CLAUDE_WRITE      a path to overwrite through a fake Write tool call
     FAKE_CLAUDE_COST       running total_cost_usd to report (default 0.01)
+    FAKE_CLAUDE_BAD_JSON   answer with prose instead of the Report JSON, every time
 """
 
 import json
@@ -48,11 +49,13 @@ if target:
 
 envelope = {"status": "success", "summary": "fake claude did the work",
             "artifacts": [], "notes_for_next_agent": ""}
+answer = ("I did it, trust me." if os.environ.get("FAKE_CLAUDE_BAD_JSON")
+          else json.dumps(envelope))
 emit({"type": "assistant", "parent_tool_use_id": None,
       "message": {"role": "assistant", "usage": usage,
-                  "content": [{"type": "text", "text": json.dumps(envelope)}]}})
+                  "content": [{"type": "text", "text": answer}]}})
 emit({"type": "result", "subtype": "success", "is_error": False,
-      "result": json.dumps(envelope), "num_turns": 1,
+      "result": answer, "num_turns": 1,
       "total_cost_usd": float(os.environ.get("FAKE_CLAUDE_COST", "0.01")),
       "usage": usage,
       "modelUsage": {"claude-haiku-5-5": {"contextWindow": 200000}}})

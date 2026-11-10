@@ -107,7 +107,14 @@ def _context_tokens(usage: dict) -> int:
 
 def context_window(provider: str, model_id: str) -> int:
     """The model's context ceiling from pi's merged model catalog."""
-    registry = json.loads(Path(MODELS_JSON).read_text())
+    # models.json only exists once a custom model is registered; built-in
+    # providers need none, so a missing or unreadable file is not an error.
+    try:
+        registry = json.loads(Path(MODELS_JSON).read_text())
+    except (OSError, ValueError):
+        registry = {}
+    if not isinstance(registry, dict):
+        registry = {}
     for model in registry.get("providers", {}).get(provider, {}).get("models", []):
         if model.get("id") == model_id:
             return int(model.get("contextWindow") or 0)

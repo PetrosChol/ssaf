@@ -283,3 +283,29 @@ def test_write_outside_the_boundary_is_rolled_back(stamped_repo):
     assert db.execute("select count(*) from events where name='permission_breach'").fetchone() == (1,)
     assert db.execute("select count(*) from events where type='tool_call' and name like 'Write:%'"
                       ).fetchone() == (1,)
+
+
+def test_boundary_is_enforced_when_the_phase_fails(stamped_repo):
+    """An agent that never produces a valid envelope still gets its writes undone."""
+    target = stamped_repo / "calc.py"
+    before = target.read_text()
+    result = _adw(stamped_repo, "change nothing", "--agent", "scout",
+                  FAKE_CLAUDE_WRITE=str(target), FAKE_CLAUDE_BAD_JSON="1")
+    assert result.returncode == 1
+    assert target.read_text() == before
+
+    db = sqlite3.connect(stamped_repo / "adws" / "adw_data" / "sssf.db")
+    assert db.execute("select count(*) from events where name='permission_breach'").fetchone() == (1,)
+    assert db.execute("select count(*) from envelopes where valid=1").fetchone() == (0,)
+
+
+def test_pi_context_window_survives_a_missing_models_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_pi, "MODELS_JSON", str(tmp_path / "absent.json"))
+    monkeypatch.setattr(agent_pi, "_pi_catalog", lambda: [("openai", "gpt-x", 272_000)])
+    assert agent_pi.context_window("openai", "gpt-x") == 272_000
+    assert agent_pi.context_window("openai", "unknown") == 0
+
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json")
+    monkeypatch.setattr(agent_pi, "MODELS_JSON", str(broken))
+    assert agent_pi.context_window("openai", "gpt-x") == 272_000
