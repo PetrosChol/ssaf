@@ -53,7 +53,7 @@ agents:
 | `color` | hex string | Lane color for every agent that does not set its own. Default empty — the visualizer falls back to its own palette. |
 | `harness_engineering` | list[string] | Coding-agent extensions. Pi: extension file paths (`-e`). Claude Code: JSON files: `*settings.json` → `--settings`, any other `.json` → `--mcp-config`. |
 | `tools` | list[string] | Roster-wide tool allowlist. Every agent that omits its own `tools` inherits this. Unset = all tools usable. |
-| `protected_files` | list[string] | Paths **no** agent may modify unless it names them in its own `writes`. Default: `adws/adw_modules/`, `adws/adw_sssf_config/`, `adws/adw_*.py` — an agent must not be able to edit the machinery that decides whether its work passed. |
+| `protected_files` | list[string] | Paths **no** agent may modify unless it names them in its own `writes`. Default: `adws/adw_modules/`, `adws/adw_sssf_config/`, `adws/adw_*.py`, `adws/conftest.py` — an agent must not be able to edit the machinery that decides whether its work passed. |
 | `data_dir` | path | Runtime home. Sessions land at `{data_dir}/sessions/{adw_id}/{agent_name}/`. Default `adws/adw_data`. |
 
 ### `observability`
@@ -174,7 +174,7 @@ redo; a write has already happened, so re-prompting fixes nothing. Instead:
 
 ```yaml
 defaults:
-  protected_files: [adws/adw_modules/, adws/adw_sssf_config/, "adws/adw_*.py"]
+  protected_files: [adws/adw_modules/, adws/adw_sssf_config/, "adws/adw_*.py", adws/conftest.py]
 
 agents:
   - name: builder      # no `writes` key -> unrestricted, minus protected_files

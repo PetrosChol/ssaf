@@ -46,6 +46,7 @@ defaults:
     - adws/adw_modules/
     - adws/adw_sssf_config/
     - adws/adw_*.py
+    - adws/conftest.py             # keeps pytest out of adws/; it grades the test phase
   data_dir: adws/adw_data          # runtime home: {data_dir}/sessions/{adw_id}/{agent_name}/
 
 observability:
