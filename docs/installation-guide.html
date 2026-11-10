@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SSSF Installation Guide</title>
+<!-- Source of installation-guide.pdf. Rebuild with: node docs/build-installation-guide.js -->
+<style>
+  @page { size: A4; margin: 18mm 17mm 20mm 17mm; }
+  :root {
+    --ink: #1c2230; --muted: #5b6475; --rule: #d9dde5; --accent: #2f5bd3;
+    --code-bg: #f4f6fa; --note-bg: #eef3ff; --warn-bg: #fff6e8; --warn-rule: #e2a33b;
+  }
+  * { box-sizing: border-box; }
+  body { font: 10pt/1.5 "DejaVu Sans", "Helvetica Neue", Arial, sans-serif; color: var(--ink); margin: 0; }
+  h1 { font-size: 22pt; line-height: 1.15; margin: 0 0 4pt; letter-spacing: -0.3pt; }
+  .subtitle { color: var(--muted); font-size: 11pt; margin: 0 0 14pt; }
+  h2 { font-size: 13.5pt; margin: 20pt 0 6pt; padding-bottom: 3pt; border-bottom: 1.5px solid var(--rule);
+       break-after: avoid; }
+  h2 .n { color: var(--accent); margin-right: 6pt; }
+  h3 { font-size: 10.5pt; margin: 12pt 0 4pt; break-after: avoid; }
+  p { margin: 0 0 7pt; }
+  ul, ol { margin: 0 0 8pt; padding-left: 16pt; }
+  li { margin-bottom: 2pt; }
+  code { font: 8.6pt "DejaVu Sans Mono", Menlo, Consolas, monospace; background: var(--code-bg);
+         padding: 0.5pt 3pt; border-radius: 3px; }
+  pre { font: 8.5pt/1.45 "DejaVu Sans Mono", Menlo, Consolas, monospace; background: var(--code-bg);
+        border: 1px solid var(--rule); border-radius: 5px; padding: 7pt 9pt; margin: 4pt 0 9pt;
+        white-space: pre-wrap; word-break: break-word; break-inside: avoid; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .label { display: inline-block; font-size: 7.5pt; font-weight: bold; text-transform: uppercase;
+           letter-spacing: 0.6pt; color: var(--muted); margin: 4pt 0 0; }
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 10pt; font-size: 8.8pt; break-inside: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 4pt 6pt; border-bottom: 1px solid var(--rule); }
+  th { background: #f0f2f6; font-weight: bold; }
+  tr { break-inside: avoid; }
+  td code { font-size: 8pt; }
+  .box { border-radius: 5px; padding: 7pt 10pt; margin: 6pt 0 10pt; break-inside: avoid; }
+  .note { background: var(--note-bg); border-left: 3px solid var(--accent); }
+  .warn { background: var(--warn-bg); border-left: 3px solid var(--warn-rule); }
+  .box p:last-child, .box ul:last-child { margin-bottom: 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8pt; }
+  .two > div { min-width: 0; }
+  .toc { columns: 2; column-gap: 18pt; margin: 0 0 6pt; padding-left: 14pt; }
+  .meta { color: var(--muted); font-size: 8.5pt; }
+</style>
+</head>
+<body>
+
+<h1>Super Simple Software Factory</h1>
+<p class="subtitle">Installation guide for Linux, macOS and Windows</p>
+
+<p>SSSF is installed in two moves: copy the <code>sssf</code> skill into the repository you want
+the factory to work on, then run its installer, which stamps the ADW scripts, the agent roster,
+prompts and recipes into that repository. Everything below is run from the <strong>root of that
+target repository</strong>, because that is where the installer writes.</p>
+
+<ol class="toc">
+  <li>Prerequisites</li>
+  <li>Copy the skill into your repository</li>
+  <li>Stamp the factory</li>
+  <li>Set your API keys</li>
+  <li>Make it a git repository</li>
+  <li>Wire your real test command</li>
+  <li>Smoke test</li>
+  <li>Windows notes</li>
+  <li>Updating an installation</li>
+  <li>Troubleshooting</li>
+</ol>
+
+<h2><span class="n">1</span>Prerequisites</h2>
+
+<table>
+  <tr><th style="width:17%">Tool</th><th style="width:25%">Needed for</th><th>Linux / macOS</th><th>Windows</th></tr>
+  <tr><td><strong>Git</strong></td><td>Required. Commit phases, change capture, the write boundary.</td>
+      <td>Your package manager (<code>apt install git</code>, <code>brew install git</code>)</td>
+      <td><strong>Git for Windows</strong>, at its default location:<br><code>winget install --id Git.Git -e</code></td></tr>
+  <tr><td><strong>uv</strong></td><td>Required. Runs every ADW and the installer, and fetches Python and the dependencies for you.</td>
+      <td><code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></td>
+      <td><code>powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"</code></td></tr>
+  <tr><td><strong>pi</strong></td><td>The default coding agent (<code>coding_agent: pi</code>).</td>
+      <td colspan="2">Install from <code>github.com/mariozechner/pi-coding-agent</code>, then check with <code>pi --version</code>.
+      Not needed if every agent uses Claude Code.</td></tr>
+  <tr><td><strong>Claude Code</strong></td><td>Only for agents set to <code>coding_agent: claude_code</code>.</td>
+      <td colspan="2"><code>claude</code> on PATH, logged in, or <code>ANTHROPIC_API_KEY</code> set.</td></tr>
+  <tr><td><strong>just</strong></td><td>Optional. The stamped recipes (<code>just demo</code>, <code>just obs</code>, …).</td>
+      <td><code>brew install just</code> or <code>uv tool install rust-just</code></td>
+      <td><code>winget install --id Casey.Just --exact</code></td></tr>
+  <tr><td><strong>sqlite3</strong></td><td>Optional. The trace-reading recipes (<code>just sessions</code>, <code>just phases</code>).</td>
+      <td>Usually preinstalled; else your package manager</td>
+      <td>Command-line tools from <code>sqlite.org/download.html</code>, with <code>sqlite3.exe</code> on PATH</td></tr>
+  <tr><td><strong>bun</strong></td><td>Optional. The trace visualizer (<code>just obs</code>).</td>
+      <td><code>curl -fsSL https://bun.sh/install | bash</code></td>
+      <td><code>powershell -c "irm bun.sh/install.ps1 | iex"</code></td></tr>
+</table>
+
+<p>You also need an API key for every model provider your agent roster names (step 4).</p>
+
+<h2><span class="n">2</span>Copy the skill into your repository</h2>
+
+<div class="two">
+<div><span class="label">Linux / macOS / Git Bash</span>
+<pre><code>mkdir -p .claude/skills
+cp -r /path/to/ssaf/.claude/skills/sssf .claude/skills/</code></pre></div>
+<div><span class="label">Windows PowerShell</span>
+<pre><code>New-Item -ItemType Directory -Force .claude\skills
+Copy-Item -Recurse C:\path\to\ssaf\.claude\skills\sssf .claude\skills\</code></pre></div>
+</div>
+
+<div class="box note"><p><strong>Using Claude Code?</strong> Once the skill is in place you can type
+<code>/sssf install</code> inside Claude Code and the agent performs steps 3 to 7 for you. The manual
+steps below are what it does.</p></div>
+
+<p>A skill installed for your user instead (<code>~/.claude/skills/sssf</code>) works too; use that path in
+the next command.</p>
+
+<h2><span class="n">3</span>Stamp the factory</h2>
+
+<pre><code>uv run .claude/skills/sssf/scripts/install.py</code></pre>
+
+<p>The same command works in every shell. It creates:</p>
+
+<table>
+  <tr><th style="width:42%">Path</th><th>What it is</th></tr>
+  <tr><td><code>adws/adw_*.py</code></td><td>The starter workflows (ADWs), e.g. <code>adw_scout</code>, <code>adw_plan_build_test</code>, <code>adw_simple_sdlc</code></td></tr>
+  <tr><td><code>adws/adw_modules/</code></td><td>The factory's own code. Protected: agents may not edit it.</td></tr>
+  <tr><td><code>adws/adw_sssf_config/sssf.config.yaml</code></td><td>The agent roster: models, tools, write permissions, timeouts</td></tr>
+  <tr><td><code>adws/adw_data/prompt_engineering/</code></td><td>Each agent's prompts. Yours to edit.</td></tr>
+  <tr><td><code>adws/adw_data/harness_engineering/</code></td><td>Pi extensions and the Context7 MCP config</td></tr>
+  <tr><td><code>justfile</code>, <code>.env.sample</code></td><td>Recipes and the environment template</td></tr>
+  <tr><td><code>.gitignore</code> entries</td><td>Runtime data (<code>adws/adw_data/sessions/</code>, <code>sssf.db</code>), <code>.env</code>, bytecode</td></tr>
+</table>
+
+<p>Re-running it is safe: existing files are skipped and listed, so a second run doubles as a drift check.</p>
+
+<h2><span class="n">4</span>Set your API keys</h2>
+
+<div class="two">
+<div><span class="label">Linux / macOS / Git Bash</span>
+<pre><code>cp .env.sample .env</code></pre></div>
+<div><span class="label">Windows PowerShell</span>
+<pre><code>Copy-Item .env.sample .env</code></pre></div>
+</div>
+
+<p>Then fill in <code>.env</code>. Which keys you need depends on the <code>model:</code> lines in
+<code>sssf.config.yaml</code>: each is written <code>provider/model-id</code>, and the provider decides the key.
+The starter roster deliberately mixes three providers:</p>
+
+<table>
+  <tr><th>Starter model</th><th>Used by</th><th>Key</th></tr>
+  <tr><td><code>google/gemini-3.6-flash</code> (via OpenRouter)</td><td>default, builder, scout</td><td><code>OPENROUTER_API_KEY</code></td></tr>
+  <tr><td><code>fireworks/…/kimi-k3</code></td><td>planner</td><td><code>FIREWORKS_API_KEY</code></td></tr>
+  <tr><td><code>openai/gpt-5.6-terra</code>, <code>openai/gpt-5.6-luna</code></td><td>reviewer, documenter</td><td><code>OPENAI_API_KEY</code></td></tr>
+</table>
+
+<div class="box note"><p><strong>One key instead of three:</strong> delete the per-agent <code>model:</code> lines so every
+agent inherits <code>defaults.model</code>. A missing key is not caught at startup; it fails when that agent runs.</p></div>
+
+<p><strong>Context7</strong> (library docs) needs no key; <code>CONTEXT7_API_KEY</code> only raises its rate limit.
+The docs phase sends library names, versions and the first 300 characters of your request to Context7. Set
+<code>context7.send_request: false</code> to send names only, or <code>context7.enabled: false</code> to turn it off.</p>
+
+<h2><span class="n">5</span>Make it a git repository</h2>
+
+<p>Workflows that commit need a repository with at least one commit. If the target is not one yet:</p>
+<pre><code>git init
+git add -A
+git commit -m "Install sssf"</code></pre>
+<p>Start runs from a clean tree. A commit phase only commits what the run changed and leaves your own
+uncommitted files out, but a clean tree avoids the question.</p>
+
+<h2><span class="n">6</span>Wire your real test command</h2>
+
+<div class="box warn">
+<p><strong>Do this before trusting any test workflow.</strong> <code>adws/adw_modules/quality.py</code> ships
+with placeholder commands. On Linux and macOS they print a notice and pass, so a fresh install reports a
+green test phase that tested nothing.</p>
+</div>
+
+<p>Open <code>adws/adw_modules/quality.py</code> and replace each <code>_placeholder(...)</code> with the real
+command, as a list:</p>
+<pre><code>argv=["uv", "run", "pytest", "-q"]      # or ["bun", "test"], ["npm", "run", "lint"], …</code></pre>
+<p>Delete the blocks you don't need and remove them from <code>run_quality()</code>.</p>
+
+<h2><span class="n">7</span>Smoke test</h2>
+
+<pre><code>just demo        # two cheap, read-only runs, end to end
+just sessions    # what just happened
+just obs         # the trace UI at http://localhost:4601 (needs bun)</code></pre>
+
+<p>Without <code>just</code>, run the first half of the demo directly:</p>
+<pre><code>uv run adws/adw_prompt.py "reply with a one-line summary of this repo" --agent scout</code></pre>
+
+<p>Success means the config validated, an agent ran, its report parsed, and the trace landed in
+<code>adws/adw_data/sssf.db</code>. Fix any failure here before running larger workflows: every
+multi-agent workflow rides this same path. The trace UI needs that database, so run the demo before
+<code>just obs</code>.</p>
+
+<h2><span class="n">8</span>Windows notes</h2>
+
+<h3>The justfile runs on Git for Windows' shell</h3>
+<p>The stamped <code>justfile</code> starts with:</p>
+<pre><code>set windows-shell := ["C:/Program Files/Git/bin/sh.exe", "-cu"]</code></pre>
+<p>On Windows, <code>just</code> otherwise runs recipes with PowerShell or <code>cmd</code>, which do not understand
+the POSIX syntax the recipes use. This line makes every recipe run in Git for Windows' <code>sh</code>, so the
+recipes behave the same on every OS. Linux and macOS ignore it.</p>
+<ul>
+  <li><strong>Git installed somewhere else</strong> (for example per-user under <code>%LOCALAPPDATA%\Programs\Git</code>)?
+      Edit the path in that line. Find it with <code>where git</code>: the shell is <code>bin\sh.exe</code> next to the
+      <code>cmd</code> folder that output names.</li>
+  <li>Use forward slashes in the path, as shown, or doubled backslashes.</li>
+</ul>
+
+<h3>Running the commands</h3>
+<ul>
+  <li><code>uv run …</code>, <code>git …</code> and <code>just …</code> commands work unchanged in PowerShell.</li>
+  <li>Windows PowerShell 5 has no <code>&amp;&amp;</code>; run chained commands one per line, as this guide does.</li>
+  <li>All files and agent output are read and written as UTF-8 regardless of the Windows code page, so non-English
+      text and emoji in prompts or fetched docs are safe.</li>
+</ul>
+
+<h3>Behaviour that differs on Windows</h3>
+<ul>
+  <li><strong>Stopping a run.</strong> On Linux and macOS, killing an ADW (or an agent timing out) also kills
+      every process the agent started. On Windows only the agent process itself is terminated; a test server it
+      launched may need closing by hand.</li>
+  <li><strong>Placeholder test commands</strong> may fail with exit 127 instead of passing, because <code>echo</code>
+      is not a program on Windows unless Git's Unix tools are on PATH. Either way, step 6 replaces them.</li>
+</ul>
+
+<h2><span class="n">9</span>Updating an installation</h2>
+
+<pre><code>uv run .claude/skills/sssf/scripts/install.py --force</code></pre>
+<p>Copy the new skill version into <code>.claude/skills/sssf</code> first. <code>--force</code> refreshes the stamped
+code, but it also overwrites <strong>all</strong> stamped files, including <code>sssf.config.yaml</code>, your prompts
+and <code>quality.py</code>. <strong>Commit first</strong>, then re-apply your edits from the diff. The one file it never
+overwrites is a <code>justfile</code> that did not come from sssf; it reports that file as kept.</p>
+
+<h2><span class="n">10</span>Troubleshooting</h2>
+
+<table>
+  <tr><th style="width:30%">Symptom</th><th style="width:34%">Cause</th><th>Fix</th></tr>
+  <tr><td><code>config validation failed</code> before anything runs</td><td>A model name is ambiguous or unknown, or a prompt file is missing</td>
+      <td>Write models as <code>provider/model-id</code>; check <code>pi --list-models</code></td></tr>
+  <tr><td>An agent fails partway through a workflow</td><td>Its provider's API key is not set</td><td>Add the key to <code>.env</code> (step 4)</td></tr>
+  <tr><td>A commit phase says “not a git repository” or “nothing to commit”</td><td>No repository, or the run changed nothing</td><td>Step 5</td></tr>
+  <tr><td>Test phase is green but nothing was tested</td><td>Placeholder commands in <code>quality.py</code></td><td>Step 6</td></tr>
+  <tr><td><code>just obs</code> says <code>sssf.db not found</code></td><td>No run has happened yet</td><td>Run <code>just demo</code> first</td></tr>
+  <tr><td>On Windows, <code>just</code> cannot find <code>sh.exe</code></td><td>Git for Windows is missing or not at the default path</td><td>Install it, or edit the <code>windows-shell</code> line (step 8)</td></tr>
+  <tr><td>A run seems stuck</td><td>An agent stopped responding</td><td><code>just procs &lt;adw_id&gt;</code> shows its processes; each agent call is also killed after
+      <code>timeout_s</code> (default one hour, set in <code>sssf.config.yaml</code>)</td></tr>
+  <tr><td>The docs phase reports errors</td><td>Context7 unreachable or rate-limited; the run continues without docs</td>
+      <td>Allow <code>mcp.context7.com</code> on your network, or set <code>CONTEXT7_API_KEY</code></td></tr>
+  <tr><td>An agent's change was rolled back and the phase failed</td><td>It wrote outside its <code>writes:</code> permission</td>
+      <td>Expected. Widen that agent's <code>writes:</code> if the change was legitimate</td></tr>
+</table>
+
+<p class="meta">More detail: the repository README and <code>.claude/skills/sssf/references/config.md</code>.</p>
+
+</body>
+</html>

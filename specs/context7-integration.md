@@ -80,7 +80,7 @@ context7:
 - `fetch(run, session, lib)`: calls `resolve` (skipped when `id` is configured) then `query_docs` over the MCP session, with the request text as the query and the pinned version. It writes `context_handoff/docs/<name>@<version>.md`, with a header giving the source, library id, version and fetch time. It caches by `(id, version)` inside the session, so a run joined with `--adw-id` reuses the files.
 - `capture(run) -> DocsResult`: the files written, plus per library `ok`, `skipped` or `error`.
 - `as_envelope(result) -> DocsOutput`: `artifacts` lists the doc files, and `notes_for_next_agent` says "read the docs under context_handoff/docs/ before using these libraries".
-- Network errors fail the phase with a clear message, never with empty docs. A per-library "not found" is recorded and skipped.
+- Network errors are recorded per library as `error` and the run continues without those docs; `context7.required: true` makes them fail the phase instead (changed after this plan: an outage at a third party should not stop a run). A per-library "not found" is recorded and skipped.
 
 **Types** (`data_types.py`): `DocsLibrary`, `DocsResult` and `DocsOutput(EnvelopeBase)`, where `DocsOutput` adds `libraries: list[str]`. This is code output, not an agent call, so the triad rule (type, `user.md` example, call site) doesn't apply.
 

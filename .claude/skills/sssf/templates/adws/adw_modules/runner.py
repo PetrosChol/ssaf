@@ -13,7 +13,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from . import agents, git_helper
+from . import agents, git_helper, permissions
 from .console import Console
 from .data_types import AgentCall, EnvelopeBase, EventRecord, Phase, PhaseParams
 from .utils import ensure_dir, now_iso
@@ -38,6 +38,23 @@ class PhaseHandle:
             raise RuntimeError("ph.call() is only valid inside an agent phase")
         return agents.execute(self.run, self.phase, call)
 
+    def commit(self, message: str) -> str:
+        """Commit what THIS RUN changed, and log exactly what that was.
+
+        `git add -A` alone would also commit whatever the operator had lying
+        uncommitted in the tree when the run started — a half-finished edit, a
+        scratch file — under an agent's commit message. Those paths are left
+        out, untouched, for as long as they are byte-for-byte what the operator
+        left; the moment the run changes one, it is the run's work and goes in.
+        """
+        left_out = self.run.operator_paths()
+        sha = git_helper.commit_all(message, exclude=left_out)
+        payload = {"sha": sha, "branch": git_helper.current_branch(), "message": message}
+        if left_out:
+            payload["left_uncommitted"] = ", ".join(left_out)
+        self.log(**payload)
+        return sha
+
 
 class Run:
     def __init__(self, cfg, adw_id: str, tracer, engineer: str):
@@ -56,6 +73,32 @@ class Run:
         self._agent_map_path = self.session_dir / "agent_map.json"
         self.agent_map: dict = (json.loads(self._agent_map_path.read_text(encoding="utf-8-sig"))
                                 if self._agent_map_path.exists() else {})
+        self.tree_baseline: dict[str, str] = self._load_tree_baseline()
+
+    # ── tree baseline (what was already uncommitted when the session began) ─
+    def _load_tree_baseline(self) -> dict[str, str]:
+        """path -> content fingerprint of every uncommitted path at session start.
+
+        Written once, when the session is created, and reused by every ADW that
+        joins it with --adw-id: a plan left uncommitted by `adw_plan` is the
+        SESSION's work, and a later `adw_build` in the same session must still
+        be able to commit it.
+        """
+        path = self.session_dir / "tree_baseline.json"
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8-sig"))
+                return data if isinstance(data, dict) else {}
+            except ValueError:
+                return {}
+        baseline = dict(permissions.snapshot(self))
+        path.write_text(json.dumps(baseline, indent=2, sort_keys=True), encoding="utf-8")
+        return baseline
+
+    def operator_paths(self) -> list[str]:
+        """Baseline paths that are still exactly as the operator left them."""
+        return sorted(path for path, fingerprint in self.tree_baseline.items()
+                      if permissions.fingerprint(self.repo_root / path) == fingerprint)
 
     # ── agent map (adw_id -> per-agent coding-agent session ids) ────────────
     def save_agent_map(self, agent: str, entry: dict) -> None:

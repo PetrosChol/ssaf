@@ -22,10 +22,10 @@ A code phase does its work in the block body and logs what it did. The commit ph
     with run.phase(PhaseParams(name="commit", kind="code", owner="git",
                                description="Land the builder's changes, using the message it wrote")) as ph:
         message = build.commit_message or f"sssf({run.adw_id}): {build.summary}"
-        ph.log(sha=git_helper.commit_all(message), message=message)
+        ph.commit(message)
 ```
 
-`commit_message` is a field on `PlanOutput`, `BuildOutput`, and `DocumentOutput` that the agent fills in **for its own work product**, so always pair it with a fallback — it defaults to empty. `commit_all` raises if the cwd is not a git repo or nothing changed, which fails the phase rather than committing nothing. A chain that commits more than once (`adw_simple_sdlc.py`) commits each product with its own author's message.
+`commit_message` is a field on `PlanOutput`, `BuildOutput`, and `DocumentOutput` that the agent fills in **for its own work product**, so always pair it with a fallback — it defaults to empty. `ph.commit(message)` stages what the run changed, commits, and logs the sha, the branch and the message. Paths that were already uncommitted when the session started, and that the run has not touched, are left out and listed in the log as `left_uncommitted`, so an agent's commit never carries the engineer's unrelated work. It raises a clear error when the cwd isn't a git repo or the run changed nothing, and that raise fails the phase. A chain that commits more than once (`adw_simple_sdlc.py`) commits each product with its own author's message.
 
 ## Remove a phase
 
@@ -52,13 +52,13 @@ The pattern from `adw_build_test.py` — always bounded by a module-level consta
 MAX_FIX_LOOPS = 3
 
     test = None
-    for i in range(1, MAX_FIX_LOOPS + 1):
+    for i in range(1, MAX_FIX_LOOPS + 2):          # one more test than fixes
         with run.phase(PhaseParams(name=f"test_{i}", kind="code", owner="quality",
                                    description="Run the suite — a known command, so code runs it")) as ph:
             test = quality.run_tests(run)          # QualityResult, not an envelope
             ph.log(passed=test.passed, artifacts=", ".join(test.artifacts))
 
-        if test.passed:
+        if test.passed or i > MAX_FIX_LOOPS:
             break
 
         with run.phase(PhaseParams(name=f"fix_{i}", kind="agent", owner="builder", retries=1,
@@ -70,6 +70,8 @@ MAX_FIX_LOOPS = 3
     return run.finish(accepted=test is not None and test.passed,
                       reason=f"the suite still failed after {MAX_FIX_LOOPS} fix attempt(s)")
 ```
+
+`MAX_FIX_LOOPS` counts **fixes**, and the loop always ends on a test: test, fix, test, … test. A loop written `range(1, MAX_FIX_LOOPS + 1)` with the fix last pays for a final repair whose result nothing ever checks.
 
 `run.finish()` ends every ADW, and it takes the acceptance criterion the phase
 statuses cannot express. A test phase that ran a red suite **succeeded** — the

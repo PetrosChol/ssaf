@@ -49,14 +49,17 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                                      gates=[gates.diff_matches_claims]))
 
     test = None
-    for i in range(1, MAX_FIX_LOOPS + 1):
+    # MAX_FIX_LOOPS counts FIXES, and every fix is followed by a run of the
+    # suite: test, fix, test, fix, ... test. The loop therefore runs the suite
+    # one more time than it repairs, so the last fix is verified, never wasted.
+    for i in range(1, MAX_FIX_LOOPS + 2):
         with run.phase(PhaseParams(name=f"test_{i}", kind="code", owner="quality",
                                    description="Run the suite — a known command, so code runs "
                                                "it and no agent has to rediscover it")) as ph:
             test = quality.run_tests(run)
             record(ph, test)
 
-        if test.passed:
+        if test.passed or i > MAX_FIX_LOOPS:
             break
 
         with run.phase(PhaseParams(name=f"fix_{i}", kind="agent", owner="builder", retries=1,

@@ -66,7 +66,7 @@ class Snapshot(dict):
     head: str = ""
 
 
-def _fingerprint(path: Path) -> str:
+def fingerprint(path: Path) -> str:
     """What is at `path` right now: a content hash, never a line count.
 
     Line counts (numstat) cannot tell one edit from another of the same size:
@@ -103,7 +103,7 @@ def snapshot(run, base: str = "") -> Snapshot:
     paths += _git(["ls-files", "--others", "--exclude-standard", "-z"], root).split("\0")
     for path in paths:
         if path:
-            shot[path] = _fingerprint(root / path)
+            shot[path] = fingerprint(root / path)
     return shot
 
 

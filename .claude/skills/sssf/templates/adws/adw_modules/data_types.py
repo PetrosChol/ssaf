@@ -362,6 +362,9 @@ class AgentConfig(BaseModel):
     #   [...] -> only these. A trailing "/" means a directory prefix; a "*"
     #            makes it a glob; anything else is an exact path.
     writes: Optional[list[str]] = None
+    # Ceiling on ONE send to this agent (a retry or correction is a new send).
+    # Past it the agent's process group is killed and the phase fails. 0 = none.
+    timeout_s: int = 3600
 
 
 class ConfigDefaults(BaseModel):
@@ -379,6 +382,7 @@ class ConfigDefaults(BaseModel):
         "adws/conftest.py",
     ])
     data_dir: str = "adws/adw_data"
+    timeout_s: int = 3600           # per agent send, seconds; 0 = no deadline
 
 
 class ObservabilityConfig(BaseModel):
@@ -404,6 +408,14 @@ class Context7Config(BaseModel):
     """
 
     enabled: bool = False
+    # False: Context7 being down or rate-limited costs the run its docs, not its
+    # life — the phase records the error and the planner starts without them.
+    # True: the run stops instead (for chains that must not plan on stale APIs).
+    required: bool = False
+    # What leaves the machine. The docs query is the library name plus, when
+    # this is set, the first 300 characters of the request, so Context7 can rank
+    # snippets by topic. Off: only library names and versions are sent.
+    send_request: bool = True
     server_url: str = CONTEXT7_SERVER_URL
     libraries: list[Context7Library] = Field(default_factory=list)   # always fetched
     from_request: bool = True       # also fetch manifest deps the request names
@@ -463,6 +475,7 @@ class PiRequest(BaseModel):
     tools: Optional[list[str]] = None
     extensions: list[str] = Field(default_factory=list)
     cwd: str = "."                  # set from run.repo_root — the codebase root agents work in
+    timeout_s: int = 0              # kill the child after this long; 0 = no deadline
 
 
 # Both backends (agent_pi, agent_cc) take and return the same shapes; the Pi

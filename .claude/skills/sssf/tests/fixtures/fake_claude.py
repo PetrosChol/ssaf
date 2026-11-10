@@ -7,6 +7,8 @@ Behaviour is steered by environment variables so one script covers every case:
     FAKE_CLAUDE_WRITE      a path to overwrite through a fake Write tool call
     FAKE_CLAUDE_COST       running total_cost_usd to report (default 0.01)
     FAKE_CLAUDE_BAD_JSON   answer with prose instead of the Report JSON, every time
+    FAKE_CLAUDE_HANG       a path: start a child `sleep`, write "<own pid> <child pid>"
+                           there, then never answer (a hung agent with a live tool)
 """
 
 import json
@@ -33,6 +35,14 @@ usage = {"input_tokens": 10, "cache_read_input_tokens": 100,
          "cache_creation_input_tokens": 50, "output_tokens": 20}
 emit({"type": "system", "subtype": "init", "cwd": os.getcwd(),
       "tools": ["Read", "Write"], "model": "claude-haiku-5-5", "permissionMode": "dontAsk"})
+
+if os.environ.get("FAKE_CLAUDE_HANG"):
+    import subprocess
+    import time
+    child = subprocess.Popen(["sleep", "600"])
+    with open(os.environ["FAKE_CLAUDE_HANG"], "w") as handle:
+        handle.write(f"{os.getpid()} {child.pid}")
+    time.sleep(600)
 
 target = os.environ.get("FAKE_CLAUDE_WRITE")
 if target:
