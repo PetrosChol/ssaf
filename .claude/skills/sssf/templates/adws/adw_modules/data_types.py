@@ -376,6 +376,7 @@ class ConfigDefaults(BaseModel):
     # the machinery that decides whether its work passed.
     protected_files: list[str] = Field(default_factory=lambda: [
         "adws/adw_modules/", "adws/adw_sssf_config/", "adws/adw_*.py",
+        "adws/conftest.py",
     ])
     data_dir: str = "adws/adw_data"
 

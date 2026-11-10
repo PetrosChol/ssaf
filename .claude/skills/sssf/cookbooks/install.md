@@ -19,6 +19,7 @@ Run from the **target repo root** — the cwd is where everything lands. If the 
 | `adws/adw_sssf_config/sssf.config.yaml` | `templates/sssf.config.yaml` | yes — the agent roster |
 | `.env.sample` | `templates/env.sample` | yes |
 | `adws/adw_*.py` | `templates/adws/` | yes — the twelve starter ADWs |
+| `adws/conftest.py` | `templates/adws/` | yes — tells pytest to skip `adws/`, so a plain `pytest` never collects `adw_build_test.py` / `adw_plan_build_test.py` as tests |
 | `adws/adw_modules/` | `templates/adws/adw_modules/` | yes — all low-level logic |
 | `adws/adw_data/prompt_engineering/{planner,builder,scout,reviewer,documenter}/` | `templates/prompt_engineering/` | yes — **the user-owned home for prompts** |
 | `adws/adw_data/harness_engineering/` | `templates/harness_engineering/` | yes — **the user-owned home for pi extensions** |
