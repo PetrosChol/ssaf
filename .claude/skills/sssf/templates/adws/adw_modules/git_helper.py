@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Iterable
 
 
 def _git(*args: str) -> str:
@@ -40,14 +41,23 @@ def repo_root() -> Path:
     return Path.cwd().resolve()
 
 
-def commit_all(message: str) -> str:
-    """Stage the working tree and commit it. Returns the new short sha."""
+def commit_all(message: str, exclude: Iterable[str] = ()) -> str:
+    """Stage the working tree and commit it. Returns the new short sha.
+
+    `exclude` names paths to leave out of the commit — and out of the index:
+    they stay exactly as they are in the working tree. A run passes the
+    operator's own uncommitted work here (see Run.operator_paths), so that
+    `git add -A` does not sweep it into an agent's commit.
+    """
     if not is_repo():
         raise RuntimeError(
             "not a git repository — a commit phase needs one. Run `git init` in the "
             "repo root (and make a first commit) before running an ADW that commits.")
     _git("add", "-A")
-    if not _git("status", "--porcelain"):
+    excluded = list(exclude)
+    for start in range(0, len(excluded), 200):          # keep argv bounded
+        _git("reset", "-q", "--", *excluded[start:start + 200])
+    if not _git("diff", "--cached", "--name-only"):
         raise RuntimeError("nothing to commit — the preceding phases changed no files")
     _git("commit", "-m", message)
     return _git("rev-parse", "--short", "HEAD")

@@ -61,7 +61,7 @@ Every `adw_*.py`, generated or hand-written, is a `uv` single-file script with t
 import argparse
 import sys
 
-from adw_modules import agents, gates, git_helper, session, utils
+from adw_modules import agents, gates, session, utils
 from adw_modules.data_types import AgentCall, BuildOutput, PhaseParams, PlanOutput
 
 REQUIRED_AGENTS = ["planner", "builder"]        # names, never models
@@ -89,7 +89,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     with run.phase(PhaseParams(name="commit", kind="code", owner="git",
                                description="Commit the working tree")) as ph:
         message = build.commit_message or f"sssf({run.adw_id}): {build.summary}"
-        ph.log(sha=git_helper.commit_all(message), message=message)
+        ph.commit(message)
 
     return run.finish()
 
@@ -111,7 +111,7 @@ if __name__ == "__main__":
 - **The engineer request phase comes first**, always.
 - **Four-param rule** — `run.phase()` and `ph.call()` each take exactly one object; new helpers with >4 params get a data type.
 - **Stay thin** — sequencing and acceptance only; real logic goes in `adw_modules/` (`update_modules.md`).
-- **Committing is a code phase, and it needs a fallback.** `PlanOutput`, `BuildOutput`, and `DocumentOutput` each carry a `commit_message` the agent writes **for its own work product** — the spec, the code, the write-up. It defaults to empty, so always `envelope.commit_message or <fallback>`, and commit each product with the message of the agent that made it (`adw_simple_sdlc.py` commits three times and never crosses them). `git_helper.commit_all(message)` stages everything, commits, and returns the short sha; it raises a clear error when the cwd isn't a git repo or nothing changed, and that raise fails the phase.
+- **Committing is a code phase, and it needs a fallback.** `PlanOutput`, `BuildOutput`, and `DocumentOutput` each carry a `commit_message` the agent writes **for its own work product** — the spec, the code, the write-up. It defaults to empty, so always `envelope.commit_message or <fallback>`, and commit each product with the message of the agent that made it (`adw_simple_sdlc.py` commits three times and never crosses them). `ph.commit(message)` stages what the run changed, commits, and logs the sha, the branch and the message. Paths that were already uncommitted when the session started, and that the run has not touched, are left out and listed in the log as `left_uncommitted`, so an agent's commit never carries the engineer's unrelated work. It raises a clear error when the cwd isn't a git repo or the run changed nothing, and that raise fails the phase.
 
 ## Before you ship it
 

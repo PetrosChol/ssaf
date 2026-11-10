@@ -33,6 +33,17 @@ GITIGNORE_ENTRIES = [
 ]
 
 
+JUSTFILE_MARKER = "# SSSF starter recipes"
+kept: list = []          # files --force declined to overwrite because they are not ours
+
+
+def _is_ours(justfile: Path) -> bool:
+    try:
+        return justfile.read_text(encoding="utf-8-sig").lstrip().startswith(JUSTFILE_MARKER)
+    except OSError:
+        return False
+
+
 def stamp(src: Path, dest: Path, force: bool, stamped: list, skipped: list) -> None:
     if src.is_dir():
         for child in sorted(src.iterdir()):
@@ -42,6 +53,12 @@ def stamp(src: Path, dest: Path, force: bool, stamped: list, skipped: list) -> N
         return
     if dest.exists() and not force:
         skipped.append(str(dest))
+        return
+    if dest.exists() and dest.name == "justfile" and not _is_ours(dest):
+        # --force refreshes what THIS installer stamped. A justfile the project
+        # already had is the project's, and overwriting it would delete recipes
+        # that have nothing to do with sssf.
+        kept.append(str(dest))
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest)
@@ -87,6 +104,9 @@ def main() -> int:
         print(f"    + {s}")
     if skipped:
         print(f"  skipped (already exist, use --force to overwrite): {len(skipped)}")
+    for path in kept:
+        print(f"  kept (not an sssf file, --force leaves it alone): {path}")
+        print(f"    the sssf recipes are in {TEMPLATES / 'justfile'} — copy the ones you want")
     print("\nnext steps:")
     print("  1. cp .env.sample .env   # then set the key(s) your roster needs")
     print("  2. just demo             # two cheap read-only runs, end to end")

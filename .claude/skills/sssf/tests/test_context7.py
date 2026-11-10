@@ -241,8 +241,49 @@ def test_unknown_library_is_recorded_and_skipped(tmp_path):
     docs.check(run, envelope)                              # only real files are claimed
 
 
-def test_network_failure_fails_the_phase_and_writes_nothing(tmp_path):
+def test_network_failure_costs_the_docs_not_the_run(tmp_path):
     run = _run(_python_repo(tmp_path))
+    stub = StubSession(fail=context7_client.Context7Error("cannot reach mcp.context7.com"))
+    result = docs.capture(run, "fastapi with pydantic", open_session=lambda cfg: stub)
+    assert [(l.name, l.status) for l in result.libraries] == [
+        ("fastapi", "error"), ("pydantic", "error")]
+    assert all("cannot reach" in l.note for l in result.libraries)
+    assert stub.calls == 1 and stub.closed                 # one failure is enough to stop asking
+    assert result.artifacts == []
+
+    envelope = docs.as_envelope(result)
+    assert envelope.status == "success" and envelope.libraries == []
+    assert "fastapi, pydantic" in envelope.notes_for_next_agent
+    assert "unavailable" in envelope.notes_for_next_agent
+    docs.check(run, envelope)                              # nothing is claimed, so nothing is missing
+    assert docs.summary(result)["errors"] == "fastapi@0.115.6, pydantic@2.11.7"
+
+
+def test_a_session_that_cannot_open_is_not_fatal_either(tmp_path):
+    run = _run(_python_repo(tmp_path))
+
+    def refuse(cfg):
+        raise context7_client.Context7Error("cannot open an MCP session")
+
+    result = docs.capture(run, "fastapi", open_session=refuse)
+    assert [(l.name, l.status) for l in result.libraries] == [("fastapi", "error")]
+
+
+def test_request_text_stays_home_when_send_request_is_off(tmp_path):
+    secret = "the unannounced Falcon launch"
+    for send, expected in ((True, True), (False, False)):
+        root = tmp_path / str(send)
+        root.mkdir()
+        run = _run(_python_repo(root), send_request=send)
+        stub = StubSession()
+        docs.capture(run, f"add a fastapi route for {secret}", open_session=lambda cfg: stub)
+        sent = json.dumps(stub.log)
+        assert "fastapi" in sent
+        assert (secret in sent) is expected
+
+
+def test_required_makes_a_network_failure_fail_the_phase(tmp_path):
+    run = _run(_python_repo(tmp_path), required=True)
     stub = StubSession(fail=context7_client.Context7Error("cannot reach mcp.context7.com"))
     with pytest.raises(context7_client.Context7Error, match="cannot reach"):
         docs.capture(run, "fastapi", open_session=lambda cfg: stub)
@@ -531,3 +572,30 @@ def test_adw_plan_runs_a_docs_phase_then_rejoins_from_the_cache(docs_repo, fake_
     assert leaked == []
     for name in ("raw_output.jsonl",):
         assert SECRET not in (session / "planner" / name).read_text()
+
+
+def test_adw_plan_survives_an_unreachable_context7(docs_repo, tmp_path):
+    import yaml
+    config_path = docs_repo / "adws" / "adw_sssf_config" / "sssf.config.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["context7"]["server_url"] = "http://127.0.0.1:9/mcp"      # nothing listens here
+    config["context7"]["timeout_s"] = 5
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+
+    result = _plan(docs_repo, "Add a FastAPI health endpoint", "--adw-id", "down0001")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    db = sqlite3.connect(docs_repo / "adws" / "adw_data" / "sssf.db")
+    assert db.execute("select status from phases where adw_id='down0001' and name='docs'"
+                      ).fetchone() == ("success",)
+    assert db.execute("select status from sessions where adw_id='down0001'").fetchone() == ("success",)
+    planner_prompt = (docs_repo / "adws" / "adw_data" / "sessions" / "down0001" / "planner"
+                      / "prompts" / "user.md").read_text()
+    assert "No docs could be fetched for: fastapi" in planner_prompt
+
+    config["context7"]["required"] = True
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    strict = _plan(docs_repo, "Add a FastAPI health endpoint", "--adw-id", "down0002")
+    assert strict.returncode == 1
+    assert db.execute("select status from phases where adw_id='down0002' and name='docs'"
+                      ).fetchone() == ("fail",)

@@ -83,7 +83,27 @@ procs ADW_ID:
 
 # Needs bun. The db path is passed explicitly because the server runs from the
 # app dir and would otherwise look for a trace db sitting next to itself.
+#
+# The skill is looked for in this repo first, then in your home directory (a
+# globally installed skill); SSSF_SKILL_DIR overrides both. The API server is
+# stopped when the UI exits, so Ctrl-C leaves nothing holding port 4600.
 
 # boot the trace UI, http://localhost:4601 (api on :4600)
 obs:
-    cd .claude/skills/sssf/apps/visualizer && bun install && (SSSF_DB={{justfile_directory()}}/{{db}} bun run server/index.ts &) && bunx vite
+    #!/usr/bin/env bash
+    set -euo pipefail
+    skill="${SSSF_SKILL_DIR:-}"
+    for candidate in "{{justfile_directory()}}/.claude/skills/sssf" "$HOME/.claude/skills/sssf"; do
+        if [ -z "$skill" ] && [ -d "$candidate/apps/visualizer" ]; then skill="$candidate"; fi
+    done
+    if [ -z "$skill" ] || [ ! -d "$skill/apps/visualizer" ]; then
+        echo "sssf skill not found: looked in .claude/skills/sssf here and in ~/.claude/skills/sssf." >&2
+        echo "Set SSSF_SKILL_DIR to the skill's directory." >&2
+        exit 1
+    fi
+    cd "$skill/apps/visualizer"
+    bun install
+    SSSF_DB="{{justfile_directory()}}/{{db}}" bun run server/index.ts &
+    api=$!
+    trap 'kill "$api" 2>/dev/null || true' EXIT
+    bunx vite

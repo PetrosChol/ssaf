@@ -54,6 +54,7 @@ agents:
 | `harness_engineering` | list[string] | Coding-agent extensions. Pi: extension file paths (`-e`). Claude Code: JSON files: `*settings.json` → `--settings`, any other `.json` → `--mcp-config`. |
 | `tools` | list[string] | Roster-wide tool allowlist. Every agent that omits its own `tools` inherits this. Unset = all tools usable. |
 | `protected_files` | list[string] | Paths **no** agent may modify unless it names them in its own `writes`. Default: `adws/adw_modules/`, `adws/adw_sssf_config/`, `adws/adw_*.py`, `adws/conftest.py` — an agent must not be able to edit the machinery that decides whether its work passed. |
+| `timeout_s` | int | Ceiling, in seconds, on **one send** to an agent (a JSON retry or gate correction is a new send). Past it the agent's whole process group is killed and the phase fails with `AgentTimeout`. `0` = no deadline. Default `3600`. Any agent may override it. |
 | `data_dir` | path | Runtime home. Sessions land at `{data_dir}/sessions/{adw_id}/{agent_name}/`. Default `adws/adw_data`. |
 
 ### `observability`
@@ -70,6 +71,8 @@ Optional. Absent means `enabled: false`. Configures the `docs` code phase (Layer
 | Field | Type | Meaning |
 |---|---|---|
 | `enabled` | bool | Run the `docs` phase in the ADWs that have one. Default `false`; the starter config sets `true`. |
+| `required` | bool | `false` (default): if Context7 is unreachable, rate-limited or refuses the key, the affected libraries are recorded as `error`, the next agent is told it has no current docs for them, and the run continues. `true`: the phase fails and the run stops. |
+| `send_request` | bool | The query sent with each lookup is the library name plus the first 300 characters of the request, so the server can rank snippets by topic. `false` sends library names and versions only. Default `true`. |
 | `server_url` | URL | The Context7 MCP server, used by both layers. Default `https://mcp.context7.com/mcp`. `agents.validate()` warns if an agent's `context7.mcp.json` points elsewhere. |
 | `libraries` | list | Always fetched: `{name, id?}` or a bare name. `id` (e.g. `/vercel/next.js`) skips resolution. Default `[]`. |
 | `from_request` | bool | Also fetch each manifest dependency whose name appears in the request text (plain word match). Default `true`. |
@@ -88,7 +91,7 @@ Optional. Absent means `enabled: false`. Configures the `docs` code phase (Layer
 | `prompt_engineering.system` | yes | Path to the system prompt — who the agent is, its single purpose, its output contract. |
 | `prompt_engineering.user` | yes | Path to the default user prompt — the task template with `{{prompt}}`, `{{previous_envelope}}`, `{{context_handoff_dir}}`. |
 | `color` | no | Hex swatch (`"#a78bfa"`) for this agent's lane in the visualizer. Travels config → `agent_sessions.color` → `/api/sessions/:adw_id`, and rides the `agent_start` event so a lane is colored while the agent is still running. Unset = the UI's fallback palette. |
-| `coding_agent`, `model`, `thinking`, `color`, `harness_engineering` | no | Override the corresponding `defaults` key. |
+| `coding_agent`, `model`, `thinking`, `color`, `harness_engineering`, `timeout_s` | no | Override the corresponding `defaults` key. |
 | `tools` | no | Allowlist. **Omitting the key means all tools usable.** A capability list, not a boundary — see `writes`. |
 | `writes` | no | What this agent may modify **in the repo**, enforced after every call. Omitted = unrestricted (still barred from `protected_files`). `[]` = no repo writes at all. A list = only those paths: a trailing `/` is a directory prefix, `*` matches within one path segment, `**` crosses segments, anything else is an exact path. Naming a `protected_files` path here is what unlocks it. **The session runtime under `data_dir` is always writable** — `writes: []` means read-only with respect to the repo, not unable to write its own report. |
 
@@ -294,7 +297,7 @@ Every Context7 call is a `tool_call` event named `context7:<tool>: <library>`. T
 |---|---|
 | Re-run with `--adw-id` | Every library already in `index.json` with its file present is a cache hit. With all hits, no MCP session is opened: `context7_calls: 0`. |
 | Context7 has no such library | Recorded as `skipped` with the reason; the phase continues. |
-| Server unreachable, rate-limited, or refusing the key | The phase fails with the reason. Never empty docs. |
+| Server unreachable, rate-limited, or refusing the key | Each library it was asked for is recorded as `error` with the reason; after the first failure the rest are not tried. The phase succeeds, the envelope names the libraries that have no docs, and the run continues. With `context7.required: true` the phase fails instead. |
 | Docs larger than the caps | Cut at `max_chars_per_library`; once `max_chars_total` is spent, later libraries are `skipped`. |
 
 ### Auth

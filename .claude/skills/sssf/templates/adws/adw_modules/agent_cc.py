@@ -41,13 +41,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 import tempfile
 import time
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urlparse
 
+from . import process
 from .agent_pi import ARG_VALUE_CHARS, RESULT_SNIPPET_CHARS, _clip, _label
 from .data_types import PiRequest, PiResult
 from .utils import now_iso, operator_env
@@ -441,27 +441,19 @@ def _run(request: PiRequest, scratch: Path, on_event, on_spawn, on_exit) -> PiRe
     raw_path = Path(request.raw_output_path)
     raw_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # stdin is DEVNULL for the same reason as in agent_pi: the prompt is in
-    # argv, and an inherited non-TTY stdin can leave the child waiting forever.
-    process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               text=True, bufsize=1, cwd=request.cwd,
-                               env=operator_env(), encoding="utf-8", errors="replace")
-    if on_spawn:
-        on_spawn(process.pid)
     state = StreamState()
     with raw_path.open("a", encoding="utf-8") as raw:
-        assert process.stdout is not None
-        for line in process.stdout:
+        def on_line(line: str) -> None:
+            nonlocal ledger
             raw.write(line)
             raw.flush()                      # events land on disk as they happen
             line = line.strip()
             if not line:
-                continue
+                return
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
-                continue
+                return
             first_sighting = not state.session_seen
             state.observe(event)
             if first_sighting and state.session_seen and ledger is None:
@@ -473,10 +465,11 @@ def _run(request: PiRequest, scratch: Path, on_event, on_spawn, on_exit) -> PiRe
             if on_event:
                 on_event(event)
 
-    stderr = process.stderr.read() if process.stderr else ""
-    returncode = process.wait()
-    if on_exit:
-        on_exit(process.pid)
+        # process.stream owns the child: DEVNULL stdin, drained stderr, the
+        # timeout, and killing the whole process group however this is left.
+        returncode, stderr = process.stream(
+            cmd, request.cwd, operator_env(), on_line,
+            on_spawn=on_spawn, on_exit=on_exit, timeout_s=request.timeout_s)
 
     result, entry = finalize(state, ledger)
     result.session_id = request.session_id

@@ -16,6 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 
+from . import process
 from .data_types import PiRequest, PiResult
 from .utils import now_iso, operator_env
 
@@ -246,30 +247,17 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
 
     result = PiResult(session_id=request.session_id,
                       context_window=context_window(provider, model_id))
-    # stdin is DEVNULL, deliberately. The prompt travels in argv, so the child
-    # never needs stdin — but inheriting the parent's means pi sees a non-TTY
-    # and can sit forever waiting for piped input that will never arrive or
-    # EOF. That failure is silent and total: no request goes out, no bytes come
-    # back, and the ADW blocks on a read loop with nothing to read. Observed as
-    # a run that sat idle at 0% CPU with an empty raw_output.jsonl.
-    process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               text=True, bufsize=1, cwd=request.cwd,
-                               env=operator_env(), encoding="utf-8", errors="replace")
-    if on_spawn:
-        on_spawn(process.pid)
     with raw_path.open("a", encoding="utf-8") as raw:
-        assert process.stdout is not None
-        for line in process.stdout:
+        def on_line(line: str) -> None:
             raw.write(line)
             raw.flush()                      # events land on disk as they happen
             line = line.strip()
             if not line:
-                continue
+                return
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
-                continue
+                return
             if event.get("type") == "message_end":
                 message = event.get("message", {})
                 if message.get("role") == "assistant":
@@ -289,10 +277,12 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
             if on_event:
                 on_event(event)
 
-    stderr = process.stderr.read() if process.stderr else ""
-    result.returncode = process.wait()
-    if on_exit:
-        on_exit(process.pid)
+        # process.stream owns the child: DEVNULL stdin, drained stderr, the
+        # timeout, and killing the whole process group however this is left.
+        result.returncode, stderr = process.stream(
+            cmd, request.cwd, operator_env(), on_line,
+            on_spawn=on_spawn, on_exit=on_exit, timeout_s=request.timeout_s)
+
     if result.returncode != 0 and not result.text:
         raise RuntimeError(f"pi exited {result.returncode}: {stderr.strip()[-800:]}")
     return result

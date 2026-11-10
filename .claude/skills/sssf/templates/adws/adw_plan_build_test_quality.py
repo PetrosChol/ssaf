@@ -19,7 +19,7 @@ fails the run.
 import argparse
 import sys
 
-from adw_modules import agents, docs, gates, git_helper, quality, session, utils
+from adw_modules import agents, docs, gates, quality, session, utils
 from adw_modules.data_types import AgentCall, BuildOutput, PhaseParams, PlanOutput
 
 REQUIRED_AGENTS = ["planner", "builder"]
@@ -62,7 +62,10 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
 
     test_result = None
     quality_result = None
-    for i in range(1, MAX_FIX_LOOPS + 1):
+    # MAX_FIX_LOOPS counts FIXES, and every fix is followed by a verify pass:
+    # verify, fix, verify, fix, ... verify. The loop therefore verifies
+    # one more time than it repairs, so the last fix is verified, never wasted.
+    for i in range(1, MAX_FIX_LOOPS + 2):
         with run.phase(PhaseParams(name=f"verify_{i}", kind="code", owner="quality",
                                    description="Lint, typecheck, and build before testing")) as ph:
             quality_result = quality.run_quality(run)
@@ -72,9 +75,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
         # in their own phase can split them out the way this comment does.
         test_result = quality_result
 
-        if quality_result.passed and test_result.passed:
-            break
-        if i == MAX_FIX_LOOPS:
+        if (quality_result.passed and test_result.passed) or i > MAX_FIX_LOOPS:
             break
 
         # Whichever block failed becomes the builder's spec — verbatim command
@@ -93,7 +94,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
         with run.phase(PhaseParams(name="commit", kind="code", owner="git",
                                    description="Commit the tested and quality-verified working tree")) as ph:
             message = previous.commit_message or f"sssf({run.adw_id}): {previous.summary}"
-            ph.log(sha=git_helper.commit_all(message), message=message)
+            ph.commit(message)
 
     return run.finish(accepted=verified,
                       reason=f"verify/test never came back clean after {MAX_FIX_LOOPS} fix attempt(s)")

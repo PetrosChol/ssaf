@@ -53,7 +53,7 @@ def load_config(path: str = "adws/adw_sssf_config/sssf.config.yaml") -> SSSFConf
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8-sig")) or {}
     defaults = raw.get("defaults", {}) or {}
     for agent in raw.get("agents", []) or []:
-        for key in ("coding_agent", "model", "thinking", "color", "tools", "writes"):
+        for key in ("coding_agent", "model", "thinking", "color", "tools", "writes", "timeout_s"):
             if key in defaults:
                 agent.setdefault(key, defaults[key])
         agent.setdefault("harness_engineering", defaults.get("harness_engineering", []))
@@ -205,6 +205,7 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
             tools=agent.tools,
             extensions=agent.harness_engineering,
             cwd=str(run.repo_root),
+            timeout_s=agent.timeout_s,
         )
         result = driver.run(
             request,
