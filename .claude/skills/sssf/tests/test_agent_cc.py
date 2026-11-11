@@ -62,6 +62,7 @@ def test_resolve_model_rejects_other_providers():
         agent_cc.resolve_model("openai/gpt-5.6-terra")
 
 
+@pytest.mark.fake_claude
 def test_validate_agent_flags_pi_only_config(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_cc, "CLAUDE_PATH", str(FAKE_CLAUDE))
     problems = agent_cc.validate_agent(_agent(
@@ -158,6 +159,7 @@ def test_resumed_run_is_charged_only_its_own_share():
     assert ledger["total_cost_usd"] == pytest.approx(0.00107095)
 
 
+@pytest.mark.fake_claude
 def test_error_result_raises(tmp_path, monkeypatch):
     script = tmp_path / "claude"
     script.write_text("#!/bin/sh\necho '{\"type\":\"result\",\"subtype\":\"error_during_execution\","
@@ -169,6 +171,7 @@ def test_error_result_raises(tmp_path, monkeypatch):
                               raw_output_path=str(tmp_path / "raw.jsonl")))
 
 
+@pytest.mark.fake_claude
 def test_run_resumes_once_the_session_exists(tmp_path, monkeypatch):
     log = tmp_path / "argv.jsonl"
     monkeypatch.setattr(agent_cc, "CLAUDE_PATH", str(FAKE_CLAUDE))
@@ -254,6 +257,7 @@ def _adw(repo: Path, *args: str, **env: str) -> subprocess.CompletedProcess:
                           cwd=repo, env=full_env, capture_output=True, text=True, timeout=120)
 
 
+@pytest.mark.fake_claude
 def test_adw_runs_a_claude_code_agent_end_to_end(stamped_repo, tmp_path):
     log = tmp_path / "argv.jsonl"
     first = _adw(stamped_repo, "look around", "--agent", "scout", "--adw-id", "e2e00001",
@@ -274,6 +278,7 @@ def test_adw_runs_a_claude_code_agent_end_to_end(stamped_repo, tmp_path):
     assert db.execute("select count(*) from envelopes where valid=1").fetchone() == (2,)
 
 
+@pytest.mark.fake_claude
 def test_write_outside_the_boundary_is_rolled_back(stamped_repo):
     target = stamped_repo / "calc.py"
     before = target.read_text()
@@ -288,6 +293,7 @@ def test_write_outside_the_boundary_is_rolled_back(stamped_repo):
                       ).fetchone() == (1,)
 
 
+@pytest.mark.fake_claude
 def test_boundary_is_enforced_when_the_phase_fails(stamped_repo):
     """An agent that never produces a valid envelope still gets its writes undone."""
     target = stamped_repo / "calc.py"
