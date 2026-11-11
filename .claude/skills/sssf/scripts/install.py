@@ -8,7 +8,7 @@ Usage:
     uv run <skill>/scripts/install.py [--force]
 
 Stamps: adws/ (modules + starter ADWs), adws/adw_data/prompt_engineering/
-(4 starter agents), adws/adw_sssf_config/sssf.config.yaml, .env.sample,
+(5 starter agents), adws/adw_sssf_config/sssf.config.yaml, .env.sample,
 .gitignore entries.
 Existing files are skipped unless --force.
 """
@@ -112,6 +112,9 @@ def main() -> int:
     print("  2. just demo             # two cheap read-only runs, end to end")
     print("  3. just sessions         # what just happened")
     print("  4. just obs              # the trace UI, needs bun")
+    print("  5. wire your real test, lint, typecheck and build commands into")
+    print("     adws/adw_modules/quality.py; until then, chains with a test phase")
+    print("     fail with 'nothing was verified' rather than pass on a placeholder")
     print("\n  no just? the raw form of step 2 is:")
     print("     uv run adws/adw_prompt.py \"say hello\" --agent scout")
     return 0

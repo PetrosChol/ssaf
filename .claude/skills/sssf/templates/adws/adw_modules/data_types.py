@@ -153,6 +153,9 @@ class QualityCheckResult(BaseModel):
     command: str
     returncode: int
     passed: bool
+    # True when the block still holds the shipped placeholder: nothing ran, so
+    # nothing was verified. Never `passed`.
+    placeholder: bool = False
     duration_seconds: float
     output_artifact: str
     # The tail of stdout+stderr, verbatim and unparsed. A failure has to travel
@@ -170,6 +173,9 @@ class QualityResult(BaseModel):
     checks: list[QualityCheckResult] = Field(default_factory=list)
     failures: list[str] = Field(default_factory=list)
     artifacts: list[str] = Field(default_factory=list)
+    # Names of the blocks that are still placeholders. A builder cannot repair
+    # these (quality.py is protected), so fix loops stop instead of spending on it.
+    unwired: list[str] = Field(default_factory=list)
 
 
 # ── Change capture (git diff, deterministic) ─────────────────────────────────

@@ -407,6 +407,7 @@ def test_an_operator_written_header_is_left_alone(tmp_path, monkeypatch):
     assert agent_cc.prepare_mcp_configs([str(own), str(other)], tmp_path) == [str(own), str(other)]
 
 
+@pytest.mark.fake_claude
 def test_run_removes_the_per_run_copy(tmp_path, monkeypatch):
     monkeypatch.setenv("CONTEXT7_API_KEY", SECRET)
     log = tmp_path / "argv.jsonl"
@@ -453,6 +454,7 @@ def _cfg(tmp_path, coding_agent="claude_code") -> SSSFConfig:
     return SSSFConfig(agents=[agent], context7=Context7Config(enabled=True))
 
 
+@pytest.mark.fake_claude
 def test_no_warning_when_context7_is_reachable_without_a_key(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_cc, "CLAUDE_PATH", str(FAKE_CLAUDE))
     probed = []
@@ -461,6 +463,7 @@ def test_no_warning_when_context7_is_reachable_without_a_key(tmp_path, monkeypat
     assert probed == ["https://mcp.context7.com/mcp"]
 
 
+@pytest.mark.fake_claude
 def test_warning_when_unreachable_without_a_key(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(agent_cc, "CLAUDE_PATH", str(FAKE_CLAUDE))
     monkeypatch.setattr(context7_client, "probe", lambda url, timeout=5.0: "HTTP 401 Unauthorized")
@@ -469,6 +472,7 @@ def test_warning_when_unreachable_without_a_key(tmp_path, monkeypatch, capsys):
     assert "warning:" in capsys.readouterr().err
 
 
+@pytest.mark.fake_claude
 def test_no_probe_with_a_key_or_without_context7(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_cc, "CLAUDE_PATH", str(FAKE_CLAUDE))
     monkeypatch.setattr(context7_client, "probe",
@@ -522,6 +526,7 @@ def _plan(repo: Path, *args: str, **env: str) -> subprocess.CompletedProcess:
                           capture_output=True, text=True, timeout=180)
 
 
+@pytest.mark.fake_claude
 def test_adw_plan_runs_a_docs_phase_then_rejoins_from_the_cache(docs_repo, fake_context7, tmp_path):
     log = tmp_path / "argv.jsonl"
     # What crashed the docs phase on a Windows cp1253 machine: an emoji in the
@@ -574,6 +579,7 @@ def test_adw_plan_runs_a_docs_phase_then_rejoins_from_the_cache(docs_repo, fake_
         assert SECRET not in (session / "planner" / name).read_text()
 
 
+@pytest.mark.fake_claude
 def test_adw_plan_survives_an_unreachable_context7(docs_repo, tmp_path):
     import yaml
     config_path = docs_repo / "adws" / "adw_sssf_config" / "sssf.config.yaml"

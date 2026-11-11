@@ -75,7 +75,9 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
         # in their own phase can split them out the way this comment does.
         test_result = quality_result
 
-        if (quality_result.passed and test_result.passed) or i > MAX_FIX_LOOPS:
+        # An unwired block is not the builder's to repair: quality.py is protected.
+        verified = quality_result.passed and test_result.passed
+        if verified or quality_result.unwired or i > MAX_FIX_LOOPS:
             break
 
         # Whichever block failed becomes the builder's spec — verbatim command
