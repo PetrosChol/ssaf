@@ -154,7 +154,4 @@ adws/adw_data/sessions/
 # of which would have stamped a fake trace db into every target repo.
 sssf.db*
 
-# demo app runtime (example branch)
-apps/inkwell/inkwell.db*
-
 *.mov

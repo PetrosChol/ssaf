@@ -20,8 +20,7 @@ Extend `adws/adw_modules/` with new low-level logic.
 | `prompts.py` | load system/user prompt refs from config, render placeholders |
 | `session.py` | mint or join `adw_id`, maintain `agent_map.json`, create session dirs incl. `context_handoff/` |
 | `tracer.py` | append JSONL **and** insert every event into `sssf.db` as it happens |
-| `console.py` | the terminal narrative — every line printed also lands in the db as a `log` event, so the UI reads the same story; plain sequential lines, no spinners |
-| `console.py` | the rich stdout reporter — every line printed is ALSO traced as a `log` event (`{message, level}`) so the terminal and the swim-lane UI tell the same story |
+| `console.py` | the rich stdout reporter — every line printed is ALSO traced as a `log` event (`{message, level}`) so the terminal and the swim-lane UI tell the same story; plain sequential lines, no spinners |
 | `git_helper.py` | branch, status, diff, commit — the raw plumbing `changes.py` composes |
 | `utils.py` | safe subprocess env, logging, `resolve_prompt` |
 

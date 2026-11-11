@@ -42,7 +42,7 @@ Gates are callables over the finished envelope — `gate(envelope, run) -> GateR
 
 On violations the harness does **not** restart the agent — it sends the violation list back into the **same session** as a correction (pi's `--session-id` creates-or-continues, so the context window is intact), bounded by that phase's `retries`. Every gate result is traced to the `gate_results` table. Exhausting the retries raises `GateFailure` and fails the phase.
 
-Gate claims, not guesses: declared artifacts exist and are non-empty, declared JSON parses, declared changes appear in the diff, declared test commands pass. Never hardcode counts — express quantity as a property of the declared list ("at least one artifact", "ALL declared paths valid"). Plan quality and code taste are not gateable; that is a reviewer agent or a human. New reusable gates go in `adw_modules/gates.py` (`update_modules.md`).
+Gate claims, not guesses: declared artifacts exist and are non-empty, declared JSON parses, declared changes are ones the run really made (`diff_matches_claims` compares each claim with what the phase changed in the tree, not with what exists), declared test commands pass. Never hardcode counts — express quantity as a property of the declared list ("at least one artifact", "ALL declared paths valid"). Plan quality and code taste are not gateable; that is a reviewer agent or a human. New reusable gates go in `adw_modules/gates.py` (`update_modules.md`).
 
 ## Add a bounded fix loop
 
@@ -58,7 +58,7 @@ MAX_FIX_LOOPS = 3
             test = quality.run_tests(run)          # QualityResult, not an envelope
             ph.log(passed=test.passed, artifacts=", ".join(test.artifacts))
 
-        if test.passed or i > MAX_FIX_LOOPS:
+        if test.passed or test.unwired or i > MAX_FIX_LOOPS:   # unwired: not the builder's to fix
             break
 
         with run.phase(PhaseParams(name=f"fix_{i}", kind="agent", owner="builder", retries=1,
@@ -79,7 +79,7 @@ runner did its job — so phases alone would report a green run that never passe
 its tests, in the db and the UI as well as the terminal. Pass `accepted=` and
 the exit code, the session status, and the banner are decided together.
 
-`quality.as_envelope` is the adapter: a deterministic result shaped as an envelope, so the builder cannot tell it came from code. Wire the real command in `quality.py` first — the stamped blocks are `echo` placeholders that announce themselves.
+`quality.as_envelope` is the adapter: a deterministic result shaped as an envelope, so the builder cannot tell it came from code. Wire the real command in `quality.py` first — the stamped blocks are placeholders. A placeholder is never run and never passes: it comes back in `QualityResult.unwired`, the fix loop must stop on it (the builder cannot edit `quality.py`), and `run.finish()` refuses to accept the run.
 
 Three distinctions worth keeping straight:
 

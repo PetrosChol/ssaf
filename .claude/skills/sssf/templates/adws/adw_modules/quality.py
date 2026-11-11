@@ -8,10 +8,11 @@ deciding.
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  REPLACE THE PLACEHOLDER COMMANDS BELOW.                                     ║
 ║                                                                              ║
-║  Every block ships as an `echo` that exits 0 and announces it is fake. They   ║
-║  are placeholders on purpose: a stamped repo has no way to guess your test    ║
-║  runner, and a wrong-but-plausible command that silently passes is worse      ║
-║  than one that says so out loud.                                             ║
+║  Every block ships as a placeholder, on purpose: a stamped repo has no way    ║
+║  to guess your test runner, and a wrong-but-plausible command that silently   ║
+║  passes is worse than one that says so out loud. A placeholder is never run   ║
+║  and never passes: the check is recorded as unwired, the fix loop stops, and  ║
+║  `run.finish()` refuses to accept the run. Nothing is "verified" by default.  ║
 ║                                                                              ║
 ║  For each block you want: swap `_placeholder(...)` for the real argv, e.g.    ║
 ║      argv=["bun", "test", "apps/web/server.test.ts"]                         ║
@@ -46,10 +47,69 @@ from .utils import now_iso, operator_env
 TAIL_CHARS = 4_000
 
 
+PLACEHOLDER = "PLACEHOLDER"
+
+
 def _placeholder(name: str) -> list[str]:
     """A command that does nothing and admits it. Replace every call to this."""
-    return ["echo", f"PLACEHOLDER {name}: edit adws/adw_modules/quality.py and "
+    return ["echo", f"{PLACEHOLDER} {name}: edit adws/adw_modules/quality.py and "
                     f"replace this echo with the real {name} command"]
+
+
+def is_placeholder(argv: list[str]) -> bool:
+    return len(argv) == 2 and argv[0] == "echo" and argv[1].startswith(PLACEHOLDER + " ")
+
+
+def _unwired(spec: QualityCheckSpec, run) -> QualityCheckResult:
+    """Record a placeholder block as what it is: a check that verified nothing.
+
+    The shipped `echo` would exit 0, and a chain would then commit code as
+    tested when no suite ever ran. So it is not run at all. The check comes
+    back not passed and marked `placeholder`, the run remembers it in
+    `run.unwired`, and `run.finish()` refuses to accept a run that holds one.
+    """
+    phase = run.phases[-1]
+    output_artifact = _check_dir(run, spec.name) / "command.log"
+    message = (f"no {spec.name} command is wired. Replace `_placeholder(\"{spec.name}\")` in "
+               f"adws/adw_modules/quality.py with the real argv, or delete the block "
+               f"and drop it from run_quality().")
+    output_artifact.write_text(f"NOT RUN: {message}\n", encoding="utf-8")
+    stamp = now_iso()
+    run.tracer.event(EventRecord(
+        adw_id=run.adw_id, phase_id=phase.phase_id, type="tool_call",
+        name=f"quality:{spec.name}",
+        payload={"area": spec.area, "operation": spec.operation, "command": "(placeholder)",
+                 "returncode": None, "passed": False, "placeholder": True,
+                 "output_artifact": str(output_artifact)},
+        started_at=stamp, ended_at=stamp))
+    run.console.note(f"quality {spec.name}: NOT WIRED, nothing was verified. {message}")
+    if spec.name not in run.unwired:
+        run.unwired.append(spec.name)
+    return QualityCheckResult(
+        name=spec.name, area=spec.area, operation=spec.operation,
+        command="(placeholder)", returncode=1, passed=False, placeholder=True,
+        duration_seconds=0.0, output_artifact=str(output_artifact), output_tail=message)
+
+
+def _collect(checks: list[QualityCheckResult]) -> QualityResult:
+    """Every check, the verdict, and each failure as the builder should read it.
+
+    A failure is the command, its exit code, and what it actually printed:
+    everything a builder needs to repair without opening a log or being told
+    what the error "means" by a parser that guessed.
+    """
+    failures = [
+        (f"{check.name}: {check.output_tail}" if check.placeholder else
+         f"{check.name}: `{check.command}` exited {check.returncode}\n{check.output_tail}").rstrip()
+        for check in checks if not check.passed
+    ]
+    return QualityResult(
+        passed=not failures,
+        checks=checks,
+        failures=failures,
+        artifacts=[check.output_artifact for check in checks],
+        unwired=[check.name for check in checks if check.placeholder],
+    )
 
 
 def _decoded(output) -> str:
@@ -66,6 +126,8 @@ def _check_dir(run, name: str) -> Path:
 
 
 def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
+    if is_placeholder(spec.argv):
+        return _unwired(spec, run)
     phase = run.phases[-1]
     output_dir = _check_dir(run, spec.name)
     output_artifact = output_dir / "command.log"
@@ -189,13 +251,7 @@ def run_tests(run) -> QualityResult:
     subprocess already knows; the repair loop is unchanged, because a failure
     still reaches the builder through `as_envelope` below.
     """
-    check = test(run)
-    failures = ([] if check.passed else
-                [f"{check.name}: `{check.command}` exited {check.returncode}\n"
-                 f"{check.output_tail}".rstrip()])
-    return QualityResult(passed=check.passed, checks=[check], failures=failures,
-                         artifacts=[check.output_artifact])
-
+    return _collect([test(run)])
 
 def as_envelope(result: QualityResult, what: str) -> VerifyOutput:
     """Wrap a deterministic result so an agent can be handed it directly.
@@ -231,17 +287,4 @@ def run_quality(run) -> QualityResult:
         typecheck,
         build,
     ]
-    checks = [block(run) for block in blocks]
-    # A failure is the command, its exit code, and what it actually printed —
-    # everything a builder needs to repair without opening a log or being told
-    # what the error "means" by a parser that guessed.
-    failures = [
-        f"{check.name}: `{check.command}` exited {check.returncode}\n{check.output_tail}".rstrip()
-        for check in checks if not check.passed
-    ]
-    return QualityResult(
-        passed=not failures,
-        checks=checks,
-        failures=failures,
-        artifacts=[check.output_artifact for check in checks],
-    )
+    return _collect([block(run) for block in blocks])

@@ -1,6 +1,6 @@
 # Super Simple Software Factory
 
-> **Fork note:** this repo is [disler/super-simple-software-factory](https://github.com/disler/super-simple-software-factory) (MIT, imported at `de31374`) with two additions: a **Claude Code backend** (`coding_agent: claude_code` is implemented, not stubbed) and a **Context7 integration** (version-pinned library docs, as an agent tool and as a `docs` code phase). Tests live in `.claude/skills/sssf/tests/`:
+> **Fork note:** this repo is [disler/super-simple-software-factory](https://github.com/disler/super-simple-software-factory) (MIT, imported at `de31374`) with two additions: a **Claude Code backend** (`coding_agent: claude_code` is implemented, not stubbed) and a **Context7 integration** (version-pinned library docs, as an agent tool and as a `docs` code phase). Tests live in `.claude/skills/sssf/tests/` and run in CI on Linux and Windows:
 >
 > ```bash
 > uv run --with pytest,pydantic,pyyaml,python-dotenv,rich,mcp==2.3.0 pytest .claude/skills/sssf/tests -q
@@ -22,9 +22,6 @@
 A software factory does one thing: it gives you more leverage on your prompt. How much leverage depends entirely on what you invest in it. At the low end you chain two agents together and hope. At the high end you build a system of agents plus code that runs without you, and does the job about as well as you would.
 
 Everyone can get an agent to write code once. Almost nobody gets the same result twice. This fixes that by moving the control plane out of the prompt and into Python. An ADW script (AI Developer Workflow) owns sequencing, retries, and acceptance. Agents work inside named phases. Typed JSON envelopes carry context across the seams. Every event streams into SQLite while it is still happening. **Agent proposes, code disposes.**
-
-> [!NOTE]
-> **This branch is the skill alone**, which is the thing you install. For a repo with the factory already stamped into it, a demo app it planned, built, tested, reviewed, and documented, and the real traces from those runs, see the **[`example` branch](../../tree/example)**.
 
 ---
 
@@ -254,7 +251,7 @@ class BuildOutput(EnvelopeBase):
 
 Determinism is wired into every step. Agents must return a specific structure, every time. If it does not parse, they get asked again until it does.
 
-Gates verify claims, never predictions. Nobody knows which files an agent will touch before it finishes, so gates run **after** the fact against the envelope's own declarations: `artifacts_exist`, `files_non_empty`, `json_parses`, `diff_matches_claims`, `tests_pass(...)`. A gate is a callable with the signature `gate(envelope, run) -> GateReport`, one `check(item, ok, note)` per thing it examined, so a green gate tells you *what* it verified.
+Gates verify claims, never predictions. Nobody knows which files an agent will touch before it finishes, so gates run **after** the fact against the envelope's own declarations: `artifacts_exist`, `files_non_empty`, `json_parses`, `diff_matches_claims`, `tests_pass(...)`. `diff_matches_claims` checks that each claimed file is one the run really changed, not merely one that exists. A gate is a callable with the signature `gate(envelope, run) -> GateReport`, one `check(item, ok, note)` per thing it examined, so a green gate tells you *what* it verified.
 
 When JSON does not parse or a gate returns violations, **nothing restarts**. The harness re-prompts the same session with a correction naming exactly what was wrong, and the context window stays intact. Pi treats `--session-id` as create-or-continue, so running an agent and continuing it are the same call. A cold restart throws away everything the agent learned. A correction costs one message.
 
@@ -294,7 +291,7 @@ It resolves its target through `--db`, then `SSSF_DB`, then `<cwd>/adws/adw_data
 
 ---
 
-## What is in this branch
+## What is in this repo
 
 ```
 super-simple-software-factory/          # the deployable factory, and nothing else
@@ -369,11 +366,11 @@ Honest edges, because knowing them is cheaper than discovering them.
 
 | Failure | What actually happens | What to do |
 |---|---|---|
-| The test phase reports green on a fresh install | `quality.py` ships placeholder commands that exit 0. Three ADWs run them as their test phase | Wire your real commands into `quality.py` before trusting `adw_build_test`, `adw_plan_build_test`, or `adw_simple_sdlc`. This is the first thing to customize |
+| A run fails with `nothing was verified` on a fresh install | `quality.py` ships placeholder commands. A placeholder is never run and never passes: the check is recorded as unwired, the fix loop stops without calling the builder, nothing is committed as tested, and `run.finish()` refuses to accept the run | Wire your real commands into `quality.py`, and delete the blocks you do not need. This is the first thing to customize |
 | A bare model pattern | The same model sits under several providers, so `gemini-3.6-flash` matches three catalog entries and `agents.validate()` refuses to spawn | Always write `provider/model-id` |
 | `just` fails on Windows with a shell error | The `justfile` runs recipes through Git for Windows' `sh` (`set windows-shell := ["C:/Program Files/Git/bin/sh.exe", "-cu"]`) | Install Git for Windows, or edit that line if yours is not under `C:/Program Files/Git` |
 | `just` is not installed | The stamped `justfile` is a convenience wrapper, nothing depends on it | Every recipe is a one-line `uv run` or `sqlite3` command. Open the justfile and run the line yourself |
-| A coding agent hangs silently | No events, no tokens, an empty `raw_output.jsonl`. The trace goes quiet rather than red, until `timeout_s` (default one hour per send) kills the agent and fails the phase | Lower `timeout_s`, or kill the ADW's pid from `just procs <adw_id>`: the run takes its agent and everything the agent started down with it, and finalizes its own trace to `fail` |
+| A coding agent hangs silently | No events, no tokens, an empty `raw_output.jsonl`. The trace goes quiet rather than red, until `timeout_s` (default one hour per send) kills the agent and fails the phase | Lower `timeout_s`, or kill the ADW's pid from `just procs <adw_id>`: the run takes its agent and everything the agent started down with it (a process group on Linux and macOS, `taskkill /T` on Windows), and finalizes its own trace to `fail` |
 | The synced triad drifts | Type, `## Report` example, and `output_type=` disagree, so every call burns correction rounds | Grep the type name and fix all three in one edit |
 | Gates pass, output is bad | Gates check what a predicate can check, not plan quality or code taste | Run the `reviewer`, or read it yourself |
 | An agent edits something it should not | Detected and rolled back after the call, and the phase fails | Expected. Widen that agent's `writes` if the change was legitimate |
@@ -401,7 +398,7 @@ Where to start, roughly in the order that pays off fastest:
 
 | Change | File | Why |
 |---|---|---|
-| Your real commands | `adws/adw_modules/quality.py` | The shipped blocks are placeholders that exit 0. Until you wire this, your test phase is theater |
+| Your real commands | `adws/adw_modules/quality.py` | The shipped blocks are placeholders. Until you wire this, every chain with a test phase fails with `nothing was verified` |
 | Your prompts | `adws/adw_data/prompt_engineering/{agent}/` | Where your standards live: what a good plan looks like, what a review has to catch |
 | Your roster | `adws/adw_sssf_config/sssf.config.yaml` | Models, thinking levels, tools, and what each agent is allowed to write |
 | Your chains | `adws/adw_*.py` | Copy the closest workflow and edit the phase list. They are 40 to 180 lines on purpose |
@@ -411,17 +408,6 @@ Where to start, roughly in the order that pays off fastest:
 And what it deliberately does not do. It runs on your current branch. There is no sandbox, no branch per run, no merge step, no cloud, and no human-in-the-loop approval phase. Those are the obvious next things to build. They are left out so the core stays small enough to read in one sitting, which is the only reason you would trust it enough to change it.
 
 So take it. Fork it, strip the parts you do not need, rename the agents, throw out half the workflows, and roll what is left into the factory your product actually needs. The specific chains in here matter far less than the shape: code owns the loop, agents own the phases, and every run leaves a trace you can go read.
-
----
-
-## See it in a real repo
-
-The [`example` branch](../../tree/example) is this same skill with the factory already stamped in: a populated `adws/`, a `justfile`, a demo app the factory planned, built, tested, reviewed, and documented, and the specs, docs, and traces those runs produced.
-
-```bash
-git clone <this-repo> sssf && cd sssf
-git checkout example
-```
 
 ---
 

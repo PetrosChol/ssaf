@@ -66,6 +66,7 @@ class Run:
         self.phases: list[Phase] = []
         self.tokens = 0
         self.cost = 0.0
+        self.unwired: list[str] = []    # quality blocks still on their placeholder
         self._seq = tracer.max_phase_seq(adw_id)   # a joined run continues the sequence
         self.repo_root = git_helper.repo_root()    # where every agent is spawned to work
         self.session_dir = ensure_dir(Path(cfg.defaults.data_dir) / "sessions" / adw_id)
@@ -74,6 +75,8 @@ class Run:
         self.agent_map: dict = (json.loads(self._agent_map_path.read_text(encoding="utf-8-sig"))
                                 if self._agent_map_path.exists() else {})
         self.tree_baseline: dict[str, str] = self._load_tree_baseline()
+        # The tree as the current agent phase found it (set by agents.execute).
+        self.tree_before: dict[str, str] | None = None
 
     # ── tree baseline (what was already uncommitted when the session began) ─
     def _load_tree_baseline(self) -> dict[str, str]:
@@ -171,6 +174,13 @@ class Run:
         now settles the db, the banner, and the exit code together, so the three
         cannot disagree.
         """
+        if self.unwired:
+            # A placeholder quality block verified nothing, whatever the ADW's
+            # own criterion concluded from the phases around it.
+            accepted = False
+            reason = (f"nothing was verified: the {', '.join(self.unwired)} command(s) in "
+                      f"adws/adw_modules/quality.py are still placeholders. Wire the "
+                      f"real commands, or delete the blocks you do not need")
         phases_ok = bool(self.phases) and all(p.status == "success" for p in self.phases)
         ok = phases_ok and accepted
         if phases_ok and not accepted:

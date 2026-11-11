@@ -59,7 +59,8 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
             test = quality.run_tests(run)
             record(ph, test)
 
-        if test.passed or i > MAX_FIX_LOOPS:
+        # An unwired suite is not the builder's to repair: quality.py is protected.
+        if test.passed or test.unwired or i > MAX_FIX_LOOPS:
             break
 
         with run.phase(PhaseParams(name=f"fix_{i}", kind="agent", owner="builder", retries=1,
