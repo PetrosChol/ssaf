@@ -85,6 +85,28 @@ tail ADW_ID:
 procs ADW_ID:
     @sqlite3 {{db}} "select kind, name, pid, command, started_at from processes where adw_id='{{ADW_ID}}' and ended_at is null order by id;"
 
+# ── efficiency ──────────────────────────────────────────────────────────────
+# Every run scores its own agent phases when it ends: how many of the agent's
+# steps (tool calls and sends) failed, repeated, or had to be redone. Counted
+# from the trace by adw_modules/efficiency.py, so it costs no tokens. Compare an
+# agent with its own history; a score is a proxy, not a verdict.
+
+# efficiency of the last 10 scored runs: wasted/total agent steps
+scores:
+    @sqlite3 {{db}} "select s.adw_id, s.status, round(1 - 1.0*sum(p.wasted_steps)/sum(p.steps), 2), sum(p.wasted_steps) || '/' || sum(p.steps), sum(p.failed_calls), sum(p.repeated_calls), round(s.total_cost,4), substr(s.request,1,40) from phase_scores p join sessions s using (adw_id) group by s.adw_id order by s.started_at desc limit 10;"
+
+# one run, phase by phase, with what the waste was: just score <adw_id>
+score ADW_ID:
+    @uv run adws/adw_modules/efficiency.py --db {{db}} {{ADW_ID}}
+
+# did a prompt edit help? efficiency per agent and prompt version, newest first
+scores-by-prompt:
+    @sqlite3 {{db}} "select agent, coalesce(prompt_hash,'unknown'), count(*), round(1 - 1.0*sum(wasted_steps)/sum(steps), 2), round(avg(cost),4), substr(min(scored_at),1,10) from phase_scores group by agent, prompt_hash order by agent, min(scored_at) desc;"
+
+# score runs that predate scoring (or rescore everything after editing the scorer)
+rescore:
+    @uv run adws/adw_modules/efficiency.py --db {{db}} --all
+
 # ── observability UI ────────────────────────────────────────────────────────
 
 # Needs bun. The db path is passed explicitly because the server runs from the

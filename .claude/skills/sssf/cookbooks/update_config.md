@@ -16,6 +16,16 @@ Write the model as `provider/model-id`, never a bare id. The same model is usual
 
 Thinking levels are Pi's reasoning effort: `off | minimal | low | medium | high | xhigh | max`. It only bites when the model is registered with `reasoning: true` in `~/.pi/agent/models.json`. For a Claude Code agent the level maps to `--effort`.
 
+## Check that a retune helped
+
+Every run records the prompt version (`prompt_hash`) and model each agent phase ran on, next to its efficiency score. After editing a prompt or changing a model, run the same kind of task a few times and compare:
+
+```bash
+just scores-by-prompt    # efficiency and average cost per agent and prompt version
+```
+
+One run proves nothing: task mix moves the score more than a prompt line does. See `references/observability.md#efficiency-scores` for what the score counts.
+
 ## Move an agent to Claude Code
 
 ```yaml

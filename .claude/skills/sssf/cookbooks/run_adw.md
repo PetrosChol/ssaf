@@ -93,6 +93,12 @@ sqlite3 adws/adw_data/sssf.db \
    where adw_id='a1b2c3d4' and type='tool_call' order by ended_at desc limit 20;"
 ```
 
+```bash
+# how much agent effort a run wasted, and on what (scored when the run ends)
+just scores              # last 10 runs
+just score a1b2c3d4      # one run, phase by phase, with the failing and repeated calls
+```
+
 Poll on a cursor: keep the highest `rowid` you have seen and query `where rowid > ?`. Don't re-read the whole table each pass.
 
 `tool_call` rows carry a real span, so durations come off the columns — see `references/observability.md` for which fields each event type populates.

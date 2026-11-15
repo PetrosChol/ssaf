@@ -85,4 +85,4 @@ Load one cookbook per request — this overview is the only one you read up fron
 | Add low-level logic or a gate | `update_modules.md` |
 | Run and monitor a workflow | `how_to_prompt_for_the_eng.md`, then `run_adw.md` |
 
-References, loaded when you need the spec: `references/config.md` (full config schema), `references/handoff.md` (envelope + session layout), `references/observability.md` (events, db tables, polling).
+References, loaded when you need the spec: `references/config.md` (full config schema), `references/handoff.md` (envelope + session layout), `references/observability.md` (events, db tables, efficiency scores, polling).

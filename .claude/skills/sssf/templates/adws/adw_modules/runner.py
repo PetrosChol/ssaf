@@ -13,7 +13,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from . import agents, git_helper, permissions
+from . import agents, efficiency, git_helper, permissions
 from .console import Console
 from .data_types import AgentCall, EnvelopeBase, EventRecord, Phase, PhaseParams
 from .utils import ensure_dir, now_iso
@@ -111,6 +111,27 @@ class Run:
         self.cost += cost
         self.tracer.session_add_usage(self.adw_id, tokens, cost)
 
+    # ── efficiency (measured from the trace, never part of the verdict) ─────
+    def score(self) -> None:
+        """Score this run's agent phases into `phase_scores`.
+
+        Called when the run ends, green or red. It measures; it does not judge:
+        a failure in here is logged and swallowed, because a broken ruler must
+        not turn a passing run into a failing one.
+        """
+        try:
+            summary = efficiency.score_session(self.tracer.conn, self.adw_id)
+        except Exception as error:
+            self.tracer.event(EventRecord(
+                adw_id=self.adw_id,
+                phase_id=self.phases[-1].phase_id if self.phases else "",
+                type="log", name="efficiency_error", payload={"error": str(error)[:500]}))
+            return
+        if summary:
+            self.console.note(f"efficiency {summary['efficiency']:.2f}: "
+                              f"{summary['wasted_steps']} of {summary['steps']} agent steps "
+                              f"wasted (just score {self.adw_id})")
+
     # ── the phase primitive ─────────────────────────────────────────────────
     @contextmanager
     def phase(self, params: PhaseParams):
@@ -141,6 +162,7 @@ class Run:
             self.tracer.phase_upsert(phase)
             self.tracer.session_finish(self.adw_id, ok=False)
             self.console.phase_ended(phase, time.monotonic() - clock)
+            self.score()                               # failed runs are scored too
             self.console.session_finished(False, self.tokens, self.cost,
                                           self.cfg.observability.db)
             raise
@@ -180,6 +202,7 @@ class Run:
                 phase_id=self.phases[-1].phase_id if self.phases else "",
                 type="error", name="not_accepted", payload={"reason": note}))
             self.console.note(f"not accepted: {note}")
+        self.score()
         self.tracer.session_finish(self.adw_id, ok=ok)
         self.console.session_finished(ok, self.tokens, self.cost, self.cfg.observability.db)
         return 0 if ok else 1
