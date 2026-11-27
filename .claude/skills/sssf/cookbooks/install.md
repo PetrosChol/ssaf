@@ -54,4 +54,6 @@ Green means the whole path works: config validated, session minted, Pi ran, enve
 sqlite3 adws/adw_data/sssf.db "select adw_id, status from sessions order by started_at desc limit 1;"
 ```
 
+7. **Wire the real commands** — `adws/adw_modules/quality.py` ships placeholders for test, lint, typecheck and build. A placeholder never passes, so `adw_build_test`, `adw_plan_build_test`, `adw_plan_build_test_quality`, `adw_simple_sdlc` and `adw_quality` fail with `nothing was verified` until the real argv is in place. Delete the blocks the repo does not need.
+
 If the smoke test fails, fix it before composing chains — every multi-agent ADW rides on this exact path.

@@ -212,9 +212,20 @@ def test_a_suite_that_never_passes_ends_on_a_test_not_a_fix(repo):
                              ).fetchone() == ("fail",)
 
 
+def test_an_unwired_suite_stops_the_loop_and_fails_the_run(repo):
+    """A fresh install has no test command: no fix is attempted, nothing is accepted."""
+    result = _build_test(repo, "loop0003")
+    assert result.returncode == 1
+    assert "nothing was verified" in result.stdout + result.stderr
+    assert _phases(repo, "loop0003") == ["request", "build", "test_1"]
+    assert _db(repo).execute("select status from sessions where adw_id='loop0003'"
+                             ).fetchone() == ("fail",)
+
+
 @pytest.mark.parametrize("name", ["adw_build_test.py", "adw_plan_build_test.py",
                                   "adw_plan_build_test_quality.py", "adw_simple_sdlc.py"])
 def test_every_fix_loop_runs_one_more_check_than_fixes(name):
     source = (SKILL / "templates" / "adws" / name).read_text()
     assert "for i in range(1, MAX_FIX_LOOPS + 2):" in source
     assert "i > MAX_FIX_LOOPS:" in source
+    assert ".unwired or i > MAX_FIX_LOOPS:" in source

@@ -38,8 +38,8 @@
   .note { background: var(--note-bg); border-left: 3px solid var(--accent); }
   .warn { background: var(--warn-bg); border-left: 3px solid var(--warn-rule); }
   .box p:last-child, .box ul:last-child { margin-bottom: 0; }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8pt; }
-  .two > div { min-width: 0; }
+  .two { display: block; }
+  .two > div { break-inside: avoid; }
   .toc { columns: 2; column-gap: 18pt; margin: 0 0 6pt; padding-left: 14pt; }
   .meta { color: var(--muted); font-size: 8.5pt; }
 </style>
@@ -49,17 +49,24 @@
 <h1>Super Simple Software Factory</h1>
 <p class="subtitle">Installation guide for Linux, macOS and Windows</p>
 
-<p>SSSF is installed in two moves: copy the <code>sssf</code> skill into the repository you want
-the factory to work on, then run its installer, which stamps the ADW scripts, the agent roster,
-prompts and recipes into that repository. Everything below is run from the <strong>root of that
-target repository</strong>, because that is where the installer writes.</p>
+<p>SSSF is a Claude Code <em>skill</em> that stamps an agent "factory" into a project you already have
+(or are starting). Installing it takes three moves: download the skill once, copy it into your project's
+<code>.claude/skills/</code> folder, then run its installer from the project's root folder. This guide walks
+through every step, from an empty machine to a first successful run.</p>
+
+<div class="box note"><p><strong>Two folders, never mixed up.</strong> The <em>ssaf repository</em> is where the skill
+comes from: download it once, anywhere. Your <em>project</em> is the code you want the factory to work on. The skill
+gets copied <strong>from</strong> the first <strong>into</strong> the second, and from step 3 on every command runs in the
+project's root folder.</p></div>
 
 <ol class="toc">
   <li>Prerequisites</li>
-  <li>Copy the skill into your repository</li>
+  <li>Download the skill (once)</li>
+  <li>Open your project's root folder</li>
+  <li>Copy the skill into the project</li>
   <li>Stamp the factory</li>
   <li>Set your API keys</li>
-  <li>Make it a git repository</li>
+  <li>Make the first commit</li>
   <li>Wire your real test command</li>
   <li>Smoke test</li>
   <li>Windows notes</li>
@@ -93,31 +100,95 @@ target repository</strong>, because that is where the installer writes.</p>
       <td><code>powershell -c "irm bun.sh/install.ps1 | iex"</code></td></tr>
 </table>
 
-<p>You also need an API key for every model provider your agent roster names (step 4).</p>
+<p>You also need an API key for every model provider your agent roster names (step 6).</p>
 
-<h2><span class="n">2</span>Copy the skill into your repository</h2>
+<h2><span class="n">2</span>Download the skill (once)</h2>
+
+<p>The skill lives in the <code>ssaf</code> repository on GitHub. Clone it to any folder that is <strong>not</strong>
+inside your project, for example a folder where you keep tools:</p>
+
+<div class="two">
+<div><span class="label">Linux / macOS / Git Bash</span>
+<pre><code>mkdir -p ~/tools
+cd ~/tools
+git clone https://github.com/PetrosChol/ssaf.git</code></pre></div>
+<div><span class="label">Windows PowerShell</span>
+<pre><code>New-Item -ItemType Directory -Force C:\tools
+cd C:\tools
+git clone https://github.com/PetrosChol/ssaf.git</code></pre></div>
+</div>
+
+<p>The skill itself is the folder <code>ssaf/.claude/skills/sssf</code> inside that clone. The rest of this guide
+calls the clone <code>~/tools/ssaf</code> (Windows: <code>C:\tools\ssaf</code>); use your own path if you chose another
+one. Note that <code>.claude</code> starts with a dot, so file browsers may hide it.</p>
+
+<h2><span class="n">3</span>Open your project's root folder</h2>
+
+<p>The <strong>root folder</strong> of a project is its top-level folder: the one that holds its <code>.git</code> folder
+and files such as <code>README.md</code>, <code>pyproject.toml</code> or <code>package.json</code>. Open a terminal there
+(in VS Code: <em>Terminal → New Terminal</em> opens one in the root of the open folder).</p>
+
+<div class="two">
+<div><span class="label">An existing project (Linux / macOS / Git Bash, then Windows PowerShell)</span>
+<pre><code>cd ~/projects/my-app
+cd D:\projects\my-app
+git status</code></pre></div>
+<div><span class="label">A new, empty project (Linux / macOS / Git Bash)</span>
+<pre><code>mkdir my-app
+cd my-app
+git init</code></pre></div>
+<div><span class="label">A new, empty project (Windows PowerShell)</span>
+<pre><code>New-Item -ItemType Directory my-app
+cd my-app
+git init</code></pre></div>
+</div>
+
+<p>Use the <code>cd</code> line for your system, with your own project path. If <code>git status</code> says the folder is not a git repository, run <code>git init</code> there. If it shows
+you are inside a repository but in a subfolder, <code>git rev-parse --show-toplevel</code> prints the root; go there.</p>
+
+<h2><span class="n">4</span>Copy the skill into the project</h2>
+
+<p>Still in the project's root folder, create <code>.claude/skills/</code> and copy the skill into it:</p>
 
 <div class="two">
 <div><span class="label">Linux / macOS / Git Bash</span>
 <pre><code>mkdir -p .claude/skills
-cp -r /path/to/ssaf/.claude/skills/sssf .claude/skills/</code></pre></div>
+cp -r ~/tools/ssaf/.claude/skills/sssf .claude/skills/</code></pre></div>
 <div><span class="label">Windows PowerShell</span>
 <pre><code>New-Item -ItemType Directory -Force .claude\skills
-Copy-Item -Recurse C:\path\to\ssaf\.claude\skills\sssf .claude\skills\</code></pre></div>
+Copy-Item -Recurse C:\tools\ssaf\.claude\skills\sssf .claude\skills\</code></pre></div>
 </div>
 
-<div class="box note"><p><strong>Using Claude Code?</strong> Once the skill is in place you can type
-<code>/sssf install</code> inside Claude Code and the agent performs steps 3 to 7 for you. The manual
-steps below are what it does.</p></div>
+<p>Your project must now look like this, with <code>.claude</code> <strong>next to</strong> <code>.git</code>:</p>
+<pre><code>my-app/                    &lt;- project root: run every command from here
+├── .git/
+├── .claude/
+│   └── skills/
+│       └── sssf/          &lt;- the copied skill (SKILL.md, scripts/, templates/, …)
+├── README.md
+└── …your code…</code></pre>
 
-<p>A skill installed for your user instead (<code>~/.claude/skills/sssf</code>) works too; use that path in
-the next command.</p>
+<p>Check it: <code>ls .claude/skills/sssf/SKILL.md</code> (PowerShell: <code>Test-Path .claude\skills\sssf\SKILL.md</code>
+must print <code>True</code>). Places that will not work: inside the <code>ssaf</code> clone, in a subfolder of the project,
+or one level too deep, <code>.claude/skills/sssf/sssf/</code>, which happens if the destination you copy to already
+ends in <code>sssf</code>. Copy to <code>.claude/skills/</code>, exactly as above.</p>
 
-<h2><span class="n">3</span>Stamp the factory</h2>
+<div class="box note"><p><strong>Using Claude Code?</strong> Claude Code finds skills in the project's
+<code>.claude/skills/</code> folder. Open Claude Code in the project root and type <code>/sssf install</code>: the agent
+performs steps 5 to 9 for you. The manual steps below are what it does.</p></div>
+
+<p><strong>Alternative: one copy for all your projects.</strong> You can put the skill in your user folder instead,
+at <code>~/.claude/skills/sssf</code> (Windows: <code>%USERPROFILE%\.claude\skills\sssf</code>). Claude Code then offers it in
+every project, and in step 5 you run the installer from that path:
+<code>uv run ~/.claude/skills/sssf/scripts/install.py</code>. The installer still writes into the folder you run it from,
+so run it from each project's root.</p>
+
+<h2><span class="n">5</span>Stamp the factory</h2>
 
 <pre><code>uv run .claude/skills/sssf/scripts/install.py</code></pre>
 
-<p>The same command works in every shell. It creates:</p>
+<p>Run it from the project root; the same command works in every shell. It writes into the folder you run it from,
+which is why step 3 matters. It creates:</p>
 
 <table>
   <tr><th style="width:42%">Path</th><th>What it is</th></tr>
@@ -132,7 +203,7 @@ the next command.</p>
 
 <p>Re-running it is safe: existing files are skipped and listed, so a second run doubles as a drift check.</p>
 
-<h2><span class="n">4</span>Set your API keys</h2>
+<h2><span class="n">6</span>Set your API keys</h2>
 
 <div class="two">
 <div><span class="label">Linux / macOS / Git Bash</span>
@@ -159,16 +230,16 @@ agent inherits <code>defaults.model</code>. A missing key is not caught at start
 The docs phase sends library names, versions and the first 300 characters of your request to Context7. Set
 <code>context7.send_request: false</code> to send names only, or <code>context7.enabled: false</code> to turn it off.</p>
 
-<h2><span class="n">5</span>Make it a git repository</h2>
+<h2><span class="n">7</span>Make the first commit</h2>
 
-<p>Workflows that commit need a repository with at least one commit. If the target is not one yet:</p>
-<pre><code>git init
-git add -A
+<p>Workflows that commit need at least one commit in the repository. Commit the installed factory
+(<code>.env</code> is gitignored, so your keys stay out):</p>
+<pre><code>git add -A
 git commit -m "Install sssf"</code></pre>
 <p>Start runs from a clean tree. A commit phase only commits what the run changed and leaves your own
 uncommitted files out, but a clean tree avoids the question.</p>
 
-<h2><span class="n">6</span>Wire your real test command</h2>
+<h2><span class="n">8</span>Wire your real test command</h2>
 
 <div class="box warn">
 <p><strong>Do this before trusting any test workflow.</strong> <code>adws/adw_modules/quality.py</code> ships
@@ -181,7 +252,7 @@ command, as a list:</p>
 <pre><code>argv=["uv", "run", "pytest", "-q"]      # or ["bun", "test"], ["npm", "run", "lint"], …</code></pre>
 <p>Delete the blocks you don't need and remove them from <code>run_quality()</code>.</p>
 
-<h2><span class="n">7</span>Smoke test</h2>
+<h2><span class="n">9</span>Smoke test</h2>
 
 <pre><code>just demo        # two cheap, read-only runs, end to end
 just sessions    # what just happened
@@ -195,7 +266,7 @@ just obs         # the trace UI at http://localhost:4601 (needs bun)</code></pre
 multi-agent workflow rides this same path. The trace UI needs that database, so run the demo before
 <code>just obs</code>.</p>
 
-<h2><span class="n">8</span>Windows notes</h2>
+<h2><span class="n">10</span>Windows notes</h2>
 
 <h3>The justfile runs on Git for Windows' shell</h3>
 <p>The stamped <code>justfile</code> starts with:</p>
@@ -224,28 +295,73 @@ recipes behave the same on every OS. Linux and macOS ignore it.</p>
       every process the agent started. On Windows only the agent process itself is terminated; a test server it
       launched may need closing by hand.</li>
   <li><strong>Placeholder test commands</strong> may fail with exit 127 instead of passing, because <code>echo</code>
-      is not a program on Windows unless Git's Unix tools are on PATH. Either way, step 6 replaces them.</li>
+      is not a program on Windows unless Git's Unix tools are on PATH. Either way, step 8 replaces them.</li>
 </ul>
 
-<h2><span class="n">9</span>Updating an installation</h2>
+<h2><span class="n">11</span>Updating an installation</h2>
 
-<pre><code>uv run .claude/skills/sssf/scripts/install.py --force</code></pre>
-<p>Copy the new skill version into <code>.claude/skills/sssf</code> first. <code>--force</code> refreshes the stamped
-code, but it also overwrites <strong>all</strong> stamped files, including <code>sssf.config.yaml</code>, your prompts
-and <code>quality.py</code>. <strong>Commit first</strong>, then re-apply your edits from the diff. The one file it never
-overwrites is a <code>justfile</code> that did not come from sssf; it reports that file as kept.</p>
+<p>The installer never overwrites a file that exists, so a new skill version is applied in a few steps. Do it
+when no run is in progress, from the project root, after committing everything (<code>git add -A</code>,
+<code>git commit -m "Before sssf update"</code>).</p>
 
-<h2><span class="n">10</span>Troubleshooting</h2>
+<div class="two">
+<div><span class="label">Linux / macOS / Git Bash</span>
+<pre><code># 1. latest skill
+git -C ~/tools/ssaf pull
+rm -rf .claude/skills/sssf
+cp -r ~/tools/ssaf/.claude/skills/sssf .claude/skills/
+# 2. new files only
+uv run .claude/skills/sssf/scripts/install.py
+# 3. the factory's code
+T=.claude/skills/sssf/templates/adws
+cp -r $T/adw_modules/. adws/adw_modules/
+cp $T/adw_*.py $T/conftest.py adws/</code></pre></div>
+<div><span class="label">Windows PowerShell</span>
+<pre><code># 1. latest skill
+git -C C:\tools\ssaf pull
+Remove-Item -Recurse -Force .claude\skills\sssf
+Copy-Item -Recurse C:\tools\ssaf\.claude\skills\sssf .claude\skills\
+# 2. new files only
+uv run .claude/skills/sssf/scripts/install.py
+# 3. the factory's code
+$T = ".claude\skills\sssf\templates\adws"
+Copy-Item -Recurse -Force $T\adw_modules\* adws\adw_modules\
+Copy-Item -Force "$T\adw_*.py", "$T\conftest.py" adws\</code></pre></div>
+</div>
+
+<ol start="4">
+  <li><strong>Put your test commands back.</strong> Step 3 replaced <code>quality.py</code> too. Run
+      <code>git diff adws/adw_modules/quality.py</code> and copy your removed <code>argv=…</code> lines back in place of
+      <code>_placeholder(…)</code>.</li>
+  <li><strong>Compare the files you own</strong> with their templates and merge what you want; old configs keep working,
+      because new settings have defaults:<br>
+      <code>git diff --no-index .claude/skills/sssf/templates/sssf.config.yaml adws/adw_sssf_config/sssf.config.yaml</code><br>
+      <code>git diff --no-index .claude/skills/sssf/templates/justfile justfile</code></li>
+  <li><strong>Check and commit:</strong> <code>just demo</code>, then <code>git add -A</code> and
+      <code>git commit -m "Update sssf"</code>.</li>
+</ol>
+
+<div class="box warn"><p>Avoid <code>install.py --force</code> for updates: it overwrites <strong>all</strong> stamped files,
+including your config, your prompts and <code>quality.py</code>. Its only exception is a <code>justfile</code> that did not
+come from sssf.</p></div>
+
+<h2><span class="n">12</span>Troubleshooting</h2>
 
 <table>
   <tr><th style="width:30%">Symptom</th><th style="width:34%">Cause</th><th>Fix</th></tr>
+  <tr><td><code>/sssf</code> is unknown in Claude Code</td><td>The skill is not at <code>.claude/skills/sssf/SKILL.md</code> under the folder Claude Code was opened in</td>
+      <td>Step 4: check the layout, and open Claude Code in the project root</td></tr>
+  <tr><td><code>adws/</code> appeared in the wrong folder</td><td>The installer was run from somewhere other than the project root</td>
+      <td>Delete what it created there, <code>cd</code> to the root (step 3), run it again</td></tr>
+  <tr><td>Installer says “stamped: 0” after an update</td><td>Normal when nothing is new; if you expected new files, the skill copy is old</td>
+      <td><code>git -C ~/tools/ssaf pull</code>, then redo step 1 of “Updating”</td></tr>
   <tr><td><code>config validation failed</code> before anything runs</td><td>A model name is ambiguous or unknown, or a prompt file is missing</td>
       <td>Write models as <code>provider/model-id</code>; check <code>pi --list-models</code></td></tr>
-  <tr><td>An agent fails partway through a workflow</td><td>Its provider's API key is not set</td><td>Add the key to <code>.env</code> (step 4)</td></tr>
-  <tr><td>A commit phase says “not a git repository” or “nothing to commit”</td><td>No repository, or the run changed nothing</td><td>Step 5</td></tr>
-  <tr><td>Test phase is green but nothing was tested</td><td>Placeholder commands in <code>quality.py</code></td><td>Step 6</td></tr>
+  <tr><td>An agent fails partway through a workflow</td><td>Its provider's API key is not set</td><td>Add the key to <code>.env</code> (step 6)</td></tr>
+  <tr><td>A commit phase says “not a git repository” or “nothing to commit”</td><td>No repository, or the run changed nothing</td><td>Steps 3 and 7</td></tr>
+  <tr><td>Test phase is green but nothing was tested</td><td>Placeholder commands in <code>quality.py</code></td><td>Step 8</td></tr>
   <tr><td><code>just obs</code> says <code>sssf.db not found</code></td><td>No run has happened yet</td><td>Run <code>just demo</code> first</td></tr>
-  <tr><td>On Windows, <code>just</code> cannot find <code>sh.exe</code></td><td>Git for Windows is missing or not at the default path</td><td>Install it, or edit the <code>windows-shell</code> line (step 8)</td></tr>
+  <tr><td>On Windows, <code>just</code> cannot find <code>sh.exe</code></td><td>Git for Windows is missing or not at the default path</td><td>Install it, or edit the <code>windows-shell</code> line (step 10)</td></tr>
   <tr><td>A run seems stuck</td><td>An agent stopped responding</td><td><code>just procs &lt;adw_id&gt;</code> shows its processes; each agent call is also killed after
       <code>timeout_s</code> (default one hour, set in <code>sssf.config.yaml</code>)</td></tr>
   <tr><td>The docs phase reports errors</td><td>Context7 unreachable or rate-limited; the run continues without docs</td>

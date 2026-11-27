@@ -14,7 +14,8 @@ Done naively that has three failure modes, and each one is silent:
     spawned, which keeps running — and spending — with nobody reading it. The
     child gets its own process group, and whatever way the read loop is left
     (timeout, signal, exception) the whole group is killed on the way out, so
-    the shell commands the agent started die with it.
+    the shell commands the agent started die with it. On Windows, where there
+    is no group to signal, `taskkill /T /F` ends the same tree.
 """
 
 from __future__ import annotations
@@ -34,16 +35,48 @@ class AgentTimeout(RuntimeError):
     """One agent send ran past its `timeout_s` and was killed."""
 
 
+WINDOWS = os.name == "nt"
+
+
+def _spawn_options() -> dict:
+    """Give the child a group of its own, so it can be stopped as a unit.
+
+    POSIX: a new session, whose process group `os.killpg` reaches. Windows has
+    no such group to signal; the new process group only keeps the operator's
+    Ctrl-C from reaching the child directly, so the ADW decides how it ends.
+    """
+    if WINDOWS:
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
+
+
+def _kill_tree_windows(process: subprocess.Popen) -> None:
+    """`taskkill /T` walks the parent links and ends every descendant.
+
+    `process.terminate()` alone ends only the direct child: the shell commands
+    an agent started would keep running, and spending, with nobody reading them.
+    """
+    try:
+        subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                       stdin=subprocess.DEVNULL, capture_output=True, timeout=KILL_GRACE_S)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        process.wait(timeout=KILL_GRACE_S)
+    except subprocess.TimeoutExpired:
+        process.kill()                           # taskkill missing or refused
+
+
 def kill_tree(process: subprocess.Popen) -> None:
     """Stop the child and everything it started. Safe to call on a dead one."""
     if process.poll() is not None:
         return
-    for sig in (signal.SIGTERM, getattr(signal, "SIGKILL", signal.SIGTERM)):
+    if WINDOWS:
+        _kill_tree_windows(process)
+        return
+    for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
-            if hasattr(os, "killpg"):
-                os.killpg(process.pid, sig)      # its own group: start_new_session
-            else:
-                process.terminate()              # no process groups (Windows)
+            os.killpg(process.pid, sig)          # its own group: start_new_session
         except (ProcessLookupError, PermissionError):
             return
         try:
@@ -68,7 +101,7 @@ def stream(cmd: list[str], cwd: str, env: dict[str, str],
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, bufsize=1, cwd=cwd, env=env,
                                encoding="utf-8", errors="replace",
-                               start_new_session=True)
+                               **_spawn_options())
     if on_spawn:
         on_spawn(process.pid)
 

@@ -223,6 +223,7 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
     # send in this phase — first prompt, JSON retries, gate corrections — is
     # measured against this one baseline.
     tree_before = permissions.snapshot(run)
+    run.tree_before = tree_before        # gates measure claims against it too
 
     def check_permissions() -> list[str]:
         try:

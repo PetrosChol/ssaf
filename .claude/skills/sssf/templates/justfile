@@ -1,8 +1,7 @@
 # SSSF starter recipes. Stamped by install.py, then yours to edit.
 #
 # Deliberately small. These are the handful you need on day one: run something,
-# watch it, and open the trace. Add your own as your chains grow, and see the
-# example branch for the fuller set (orchestrator agents, kill, rosters, ipi).
+# watch it, and open the trace. Add your own as your chains grow.
 
 # `.env` reaches every ADW through this, so keys work without exporting them.
 set dotenv-load

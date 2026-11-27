@@ -11,9 +11,11 @@ Gates check what is mechanically checkable; plan quality is a reviewer's job.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
+from . import permissions
 from .data_types import EnvelopeBase, GateReport
 
 TAIL_CHARS = 1000        # command output kept as evidence on a failure
@@ -58,13 +60,63 @@ def json_parses(envelope: EnvelopeBase, run) -> GateReport:
     return report
 
 
+def _repo_path(claim: str, root: Path) -> str:
+    """A claimed path as git names it: relative to the repo root, forward slashes."""
+    path = Path(claim)
+    if path.is_absolute():
+        try:
+            path = path.resolve().relative_to(root.resolve())
+        except ValueError:
+            return claim                   # outside the repo: no diff can hold it
+    return Path(os.path.normpath(path)).as_posix()
+
+
+def _ignored(path: str, root: Path) -> bool:
+    result = subprocess.run(["git", "check-ignore", "-q", "--", path], cwd=root,
+                            capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return result.returncode == 0
+
+
 def diff_matches_claims(envelope: EnvelopeBase, run) -> GateReport:
-    """Every file claimed changed must exist on disk."""
+    """Every file claimed changed must actually have been changed by this run.
+
+    Existing is not the same as changed: every file in the repo exists, so a
+    builder that names a file it never touched would pass an existence check.
+    A claim holds when the path is one the agent changed in this phase
+    (created, edited, deleted, or committed), or one the run left changed in
+    an earlier phase and that is still uncommitted. A path that is only the
+    operator's own untouched uncommitted work does not count.
+
+    Where git cannot answer (no repository, a gitignored path, or a gate called
+    outside an agent phase) the check falls back to existence and says so.
+    """
     report = GateReport()
-    for f in getattr(envelope, "changed_files", []):
-        p = Path(f)
-        report.check(f, p.exists(),
-                     f"exists, {_size(p)}" if p.exists() else "claimed changed file does not exist")
+    claims = list(getattr(envelope, "changed_files", []))
+    if not claims:
+        return report
+    root = Path(run.repo_root)
+    before = getattr(run, "tree_before", None)
+    verifiable = before is not None and bool(getattr(before, "head", ""))
+    if verifiable:
+        after = permissions.snapshot(run, base=before.head)
+        in_phase = set(permissions.changed_paths(before, after))
+        operator = set(run.operator_paths())
+    for claim in claims:
+        path = _repo_path(claim, root)
+        exists = (root / path).exists()
+        if not verifiable or _ignored(path, root):
+            why = "gitignored" if verifiable else "no git baseline"
+            report.check(claim, exists,
+                         f"exists, {_size(root / path)} ({why}: change not verifiable)" if exists
+                         else "claimed changed file does not exist")
+        elif path in in_phase:
+            report.check(claim, True, "changed in this phase" if exists else "deleted in this phase")
+        elif path in after and path not in operator:
+            report.check(claim, True, "changed earlier in this run, still uncommitted")
+        else:
+            report.check(claim, False,
+                         "claimed changed, but this run did not change it" if exists
+                         else "claimed changed file does not exist and was not deleted by this run")
     return report
 
 
@@ -95,10 +147,15 @@ def verdict_consistent(envelope: EnvelopeBase, run) -> GateReport:
     return report
 
 
-def tests_pass(command: str):
-    """Gate factory: the given shell command must exit 0."""
+def tests_pass(command: str, timeout_seconds: int = 600):
+    """Gate factory: the given shell command must exit 0, run from the repo root."""
     def gate(envelope: EnvelopeBase, run) -> GateReport:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        try:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True,
+                                    encoding="utf-8", errors="replace",
+                                    cwd=run.repo_root, timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            return GateReport().check(command, False, f"timed out after {timeout_seconds}s")
         ok = result.returncode == 0
         note = f"exit {result.returncode}"
         if not ok:
