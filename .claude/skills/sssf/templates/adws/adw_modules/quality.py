@@ -142,15 +142,40 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
 # ── Blocks ────────────────────────────────────────────────────────────────────
 # Replace every argv below. See the banner at the top of this file.
 
-def test(run) -> QualityCheckResult:
-    """Run the project's test suite. The highest-value block to wire up first."""
-    return _run(QualityCheckSpec(
+def _test_spec(paths: list[str] | None = None) -> QualityCheckSpec:
+    spec = QualityCheckSpec(
         name="test",
         area="backend",
         operation="build",
         argv=_placeholder("test"),        # e.g. ["bun", "test"] or ["uv", "run", "pytest", "-q"]
         timeout_seconds=600,
-    ), run)
+    )
+    # Run only these files: appended as positional arguments, which is how
+    # pytest, bun test, jest and vitest all take them. A runner that selects
+    # tests some other way (npm test -- ..., go test ./pkg) needs this line
+    # adapted. Used by adw_test_write, which runs only the tests it wrote.
+    spec.argv = [*spec.argv, *(paths or [])]
+    return spec
+
+
+def test(run, paths: list[str] | None = None) -> QualityCheckResult:
+    """Run the project's test suite. The highest-value block to wire up first."""
+    return _run(_test_spec(paths), run)
+
+
+def test_configured() -> bool:
+    """False while the test block is still the placeholder `echo`.
+
+    A placeholder exits 0, so a workflow whose whole point is a test run would
+    report green having run nothing. adw_test_write refuses to start instead.
+    """
+    argv = _test_spec().argv
+    return not (argv[:1] == ["echo"] and len(argv) > 1 and argv[1].startswith("PLACEHOLDER"))
+
+
+def test_command() -> str:
+    """The test command as it would run — what the test planner is told."""
+    return shlex.join(_test_spec().argv)
 
 
 def lint(run) -> QualityCheckResult:
@@ -181,15 +206,16 @@ def build(run) -> QualityCheckResult:
     ), run)
 
 
-def run_tests(run) -> QualityResult:
+def run_tests(run, paths: list[str] | None = None) -> QualityResult:
     """The test suite alone, as a QualityResult — the deterministic test phase.
 
-    This is what replaces a `tester` agent once the command is written down. An
-    agent rediscovering the runner on every run costs a fortune to learn what a
-    subprocess already knows; the repair loop is unchanged, because a failure
-    still reaches the builder through `as_envelope` below.
+    This is what replaces an agent RUNNING the tests once the command is written
+    down. An agent rediscovering the runner on every run costs a fortune to
+    learn what a subprocess already knows; the repair loop is unchanged, because
+    a failure still reaches the agent through `as_envelope` below. `paths`
+    narrows the run to those test files (see `_test_spec`).
     """
-    check = test(run)
+    check = test(run, paths)
     failures = ([] if check.passed else
                 [f"{check.name}: `{check.command}` exited {check.returncode}\n"
                  f"{check.output_tail}".rstrip()])

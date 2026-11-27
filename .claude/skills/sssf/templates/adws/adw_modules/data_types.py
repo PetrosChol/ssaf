@@ -128,6 +128,73 @@ class DocumentOutput(EnvelopeBase):
     commit_message: str = ""
 
 
+# ── Testing an existing file (adw_test_plan -> engineer approval -> adw_test_write)
+
+class PlannedCase(BaseModel):
+    """One test the plan proposes, before any of it is written."""
+
+    name: str                       # what the test will be called
+    kind: Literal["basic", "edge", "error"] = "basic"
+    checks: str = ""                # the behaviour it pins down, in one sentence
+
+
+class TestPlanOutput(EnvelopeBase):
+    """The test_planner's proposal, which the engineer approves or edits.
+
+    The plan FILE (`context_handoff/test_plan.md`) is what gets approved — the
+    engineer may edit it before approving, so the tester follows the file, and
+    these fields are the planner's summary of what it first proposed.
+    """
+
+    __test__ = False                # a Test* class, but not one pytest should collect
+
+    target: str = ""                # the file under test, repo-relative
+    purpose: str = ""               # what the file is for, in the planner's words
+    framework: str = ""             # the runner the tests are written for, e.g. pytest
+    test_files: list[str] = Field(default_factory=list)   # where the tests will live
+    cases: list[PlannedCase] = Field(default_factory=list)
+
+
+class SuspectedBug(BaseModel):
+    """A failing test the tester believes is RIGHT — the code under test is wrong.
+
+    Reported, never "fixed": changing the test until it agrees with the code
+    would turn a found bug into a passing test that guarantees the bug stays.
+    """
+
+    test: str                       # the failing test, e.g. tests/test_calc.py::test_div_zero
+    observed: str                   # what the code actually does
+    expected: str                   # what it should do, and on whose authority
+    evidence: str = ""              # file:line in the code, docstring, or plan entry
+
+
+class TesterOutput(EnvelopeBase):
+    """What the tester wrote or repaired, and what it refused to repair."""
+
+    test_files: list[str] = Field(default_factory=list)      # EVERY test file of this run, cumulative
+    changed_files: list[str] = Field(default_factory=list)   # what THIS send changed
+    cases: list[str] = Field(default_factory=list)           # one line per test written
+    fixed: list[str] = Field(default_factory=list)           # test mistakes repaired this send
+    suspected_bugs: list[SuspectedBug] = Field(default_factory=list)   # the CURRENT full list
+    commit_message: str = ""        # subject for committing the tests
+
+
+class TargetSnapshot(BaseModel):
+    """The file under test, exactly as it was before any tester ran."""
+
+    path: str                       # repo-relative
+    content: Optional[bytes] = None # None: the file did not exist
+
+
+class ApprovedPlan(BaseModel):
+    """The plan the engineer approved by running adw_test_write against its session."""
+
+    envelope: TestPlanOutput        # the planner's envelope
+    path: str                       # context_handoff/test_plan.md — the approved text
+    sha256: str                     # of the file at approval time
+    edited: bool = False            # the engineer changed it after the planner wrote it
+
+
 # ── Deterministic quality blocks ─────────────────────────────────────────────
 
 QualityArea = Literal["frontend", "backend"]

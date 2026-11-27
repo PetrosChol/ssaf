@@ -182,7 +182,7 @@ agents:
       - specs/
 ```
 
-Five starter agents ship in the box: `planner`, `builder`, `scout` (read-only recon), `reviewer`, and `documenter`. There is no tester, because running a suite is a known command and therefore code.
+Seven starter agents ship in the box: `planner`, `builder`, `scout` (read-only recon), `reviewer`, `documenter`, and the testing pair `test_planner` (read-only) and `tester` (may write test paths only). No agent *runs* a suite, because running one is a known command and therefore code; the tester writes tests and repairs them.
 
 Every agent gets its own model, thinking level, prompts, tools, and harness. That is the core four, and it is the whole surface you tune. Give the planner a frontier model and the builder a cheap fast one. Give the scout subagents. Give the reviewer no ability to write code at all.
 
@@ -339,8 +339,21 @@ uv run adws/adw_*.py "<prompt or path/to/prompt.md>" [--config adws/adw_sssf_con
 | `adw_plan_build_test_quality` | same, plus lint/typecheck/build gates | the repo has quality commands worth enforcing |
 | `adw_document` | code(git diff), documenter | write up what just shipped |
 | `adw_simple_sdlc` | plan, build, test, review, document | the work is real and its shape is not obvious |
+| `adw_test_plan` | test_planner, code(present) | propose tests for an existing file; writes nothing, stops for your approval |
+| `adw_test_write` | engineer(approve), tester, code(test), bounded triage loop, git(commit) | approve the plan: write the tests, repair wrong tests, report real bugs |
 
 With `context7.enabled` (the starter default), every chain that starts with a planner (`adw_plan`, `adw_plan_build`, `adw_plan_build_test`, `adw_plan_build_test_quality`, `adw_simple_sdlc`) first runs a `docs` code phase, which does nothing when the request names no dependency.
+
+**Testing an existing file** is two runs with you in between, because a headless run cannot wait for an answer:
+
+```bash
+uv run adws/adw_test_plan.py src/calc.py --focus "rounding"   # writes context_handoff/test_plan.md, prints adw_id
+# read the plan, edit it if you want, then approve by running:
+uv run adws/adw_test_write.py --adw-id a1b2c3d4
+just test-file src/calc.py                                     # both, with a y/N prompt in between
+```
+
+The tester may only write test paths, and the file under test is restored and the phase failed if anything changes it. When a test fails, the tester decides who is wrong: a wrong test is repaired, but a test that is right about buggy code is left failing and reported in `context_handoff/suspected_bugs.md`. A green suite is committed. A red one is not, and the run exits 1 with the bug count. The test command comes from `quality.py`, run on just the new test files, and `adw_test_write` refuses to start while it is still the placeholder.
 
 `adw_simple_sdlc` lands three commits from three authors. The plan, the code, and the write-up each get their own, and each message is the words of the agent that produced it.
 

@@ -21,7 +21,7 @@ Run from the **target repo root** — the cwd is where everything lands. If the 
 | `adws/adw_*.py` | `templates/adws/` | yes — the twelve starter ADWs |
 | `adws/conftest.py` | `templates/adws/` | yes — tells pytest to skip `adws/`, so a plain `pytest` never collects `adw_build_test.py` / `adw_plan_build_test.py` as tests |
 | `adws/adw_modules/` | `templates/adws/adw_modules/` | yes — all low-level logic |
-| `adws/adw_data/prompt_engineering/{planner,builder,scout,reviewer,documenter}/` | `templates/prompt_engineering/` | yes — **the user-owned home for prompts** |
+| `adws/adw_data/prompt_engineering/{planner,builder,scout,reviewer,documenter,test_planner,tester}/` | `templates/prompt_engineering/` | yes — **the user-owned home for prompts** |
 | `adws/adw_data/harness_engineering/` | `templates/harness_engineering/` | yes — **the user-owned home for pi extensions** |
 | `justfile` | `templates/justfile` | yes — starter recipes: `just demo`, the workflows, the trace reads, `just obs` |
 | `adws/adw_data/sessions/`, `adws/adw_data/sssf.db` | created at runtime | no — gitignored |
