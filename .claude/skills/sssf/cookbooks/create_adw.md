@@ -16,7 +16,7 @@ Answer four questions, in order:
 | `reviewer` | the change must be confirmed to BE what was asked for | `ReviewOutput` | `artifacts_exist`, `verdict_consistent` |
 | *(no agent runs tests)* | verifying that it RUNS is a `kind="code"` phase over `quality.py`, not an agent | `QualityResult` → `as_envelope` | the exit code is the check |
 | `test_planner` | propose tests for an existing file, for the engineer to approve (`writes: []`) | `TestPlanOutput` | `testing.plan_complete` |
-| `tester` | write approved tests; triage failures into test repairs vs suspected bugs (test paths only) | `TesterOutput` | `testing.tests_declared`, `testing.failures_accounted_for`, `diff_matches_claims` |
+| `tester` | write approved tests; triage failures into test repairs vs suspected bugs (only the tests folder the engineer named) | `TesterOutput` | `testing.tests_declared`, `testing.failures_accounted_for`, `diff_matches_claims` |
 | `documenter` | finished work needs a write-up (runs after a build, off the diff) | `DocumentOutput` | `artifacts_exist`, `files_non_empty` |
 | any agent, generic ask | one-off prompt, no special shape | `GenericOutput` | as needed |
 

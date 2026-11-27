@@ -21,7 +21,7 @@ Three steps. Then stop.
 |---|---|---|
 | adw_scout | engineer → scout | read-only recon; nothing changes |
 | adw_simple_sdlc | plan → build → test → review → document, 3 commits | the work is real and its shape is not obvious |
-| adw_test_plan → adw_test_write | propose tests → engineer approves → write, run, triage | an existing file needs tests; real bugs get reported, not hidden |
+| adw_test_plan → adw_test_write | `<file> <tests folder>`: propose tests → engineer approves → write, run, triage | an existing file needs tests; real bugs get reported, not hidden |
 ```
 
 **Nothing else.** No trace-db queries, no reading the config or the ADW scripts' bodies, no repo inventory, no last-runs summary, no diagnosing an old failure, no "current state" dashboard. None of it was asked for, and it is not free:

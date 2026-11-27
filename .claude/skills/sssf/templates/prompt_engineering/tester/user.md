@@ -18,7 +18,7 @@
 
 Two kinds of send arrive here. Tell them apart by `previous_envelope`:
 
-**Write** — `previous_envelope` is the test plan (`TestPlanOutput`). Read `<context_handoff_dir>/test_plan.md` — the approved plan, possibly edited by the engineer — and write every case it lists, in the files it names unless it says otherwise. Do not change the file under test.
+**Write** — `previous_envelope` is the test plan (`TestPlanOutput`). Read `<context_handoff_dir>/test_plan.md` — the approved plan, possibly edited by the engineer — and write every case it lists, in the files it names, all inside the tests folder named in `prompt`. Do not change the file under test.
 
 **Triage** — `previous_envelope` has `"passed": false` and `failures`: the project's test command ran your tests and they failed. The output in `failures` is verbatim; the full log is in its `artifacts`. Triage each failure as your instructions say: repair the tests that are wrong, report the bugs that are real, change nothing else.
 

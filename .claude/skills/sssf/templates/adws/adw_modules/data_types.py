@@ -179,6 +179,16 @@ class TesterOutput(EnvelopeBase):
     commit_message: str = ""        # subject for committing the tests
 
 
+class TestRequest(BaseModel):
+    """What the engineer asked for, recorded by code: the file and where its tests go."""
+
+    __test__ = False
+
+    target: str                     # the file under test, repo-relative
+    tests_dir: str                  # the folder the tests go in — the tester's only write path
+    focus: str = ""
+
+
 class TargetSnapshot(BaseModel):
     """The file under test, exactly as it was before any tester ran."""
 
@@ -190,6 +200,7 @@ class ApprovedPlan(BaseModel):
     """The plan the engineer approved by running adw_test_write against its session."""
 
     envelope: TestPlanOutput        # the planner's envelope
+    request: TestRequest            # target and tests folder, as the engineer gave them
     path: str                       # context_handoff/test_plan.md — the approved text
     sha256: str                     # of the file at approval time
     edited: bool = False            # the engineer changed it after the planner wrote it

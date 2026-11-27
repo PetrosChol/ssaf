@@ -182,7 +182,7 @@ agents:
       - specs/
 ```
 
-Seven starter agents ship in the box: `planner`, `builder`, `scout` (read-only recon), `reviewer`, `documenter`, and the testing pair `test_planner` (read-only) and `tester` (may write test paths only). No agent *runs* a suite, because running one is a known command and therefore code; the tester writes tests and repairs them.
+Seven starter agents ship in the box: `planner`, `builder`, `scout` (read-only recon), `reviewer`, `documenter`, and the testing pair `test_planner` (read-only) and `tester` (may write only the tests folder you name). No agent *runs* a suite, because running one is a known command and therefore code; the tester writes tests and repairs them.
 
 Every agent gets its own model, thinking level, prompts, tools, and harness. That is the core four, and it is the whole surface you tune. Give the planner a frontier model and the builder a cheap fast one. Give the scout subagents. Give the reviewer no ability to write code at all.
 
@@ -346,14 +346,16 @@ With `context7.enabled` (the starter default), every chain that starts with a pl
 
 **Testing an existing file** is two runs with you in between, because a headless run cannot wait for an answer:
 
+Every testing command follows one template: the command, the file to examine, then the folder the tests go in.
+
 ```bash
-uv run adws/adw_test_plan.py src/calc.py --focus "rounding"   # writes context_handoff/test_plan.md, prints adw_id
-# read the plan, edit it if you want, then approve by running:
-uv run adws/adw_test_write.py --adw-id a1b2c3d4
-just test-file src/calc.py                                     # both, with a y/N prompt in between
+just test-file src/calc.py tests                                 # plan, y/N prompt, write
+just test-plan src/calc.py tests --focus "rounding"              # plan only, prints adw_id
+just test-write a1b2c3d4                                         # approve that plan
+uv run adws/adw_test_plan.py src/calc.py tests                   # the same, without just
 ```
 
-The tester may only write test paths, and the file under test is restored and the phase failed if anything changes it. When a test fails, the tester decides who is wrong: a wrong test is repaired, but a test that is right about buggy code is left failing and reported in `context_handoff/suspected_bugs.md`. A green suite is committed. A red one is not, and the run exits 1 with the bug count. The test command comes from `quality.py`, run on just the new test files, and `adw_test_write` refuses to start while it is still the placeholder.
+The folder is the tester's whole write permission for the run: anything written outside it is rolled back and fails the phase. A folder that would grant more is refused up front: the repo root, a folder holding the file under test, or one overlapping `adws/`. The file under test is restored and the phase failed if anything changes it. When a test fails, the tester decides who is wrong: a wrong test is repaired, but a test that is right about buggy code is left failing and reported in `context_handoff/suspected_bugs.md`. A green suite is committed. A red one is not, and the run exits 1 with the bug count. The test command comes from `quality.py`, run on just the new test files, and `adw_test_write` refuses to start while it is still the placeholder.
 
 `adw_simple_sdlc` lands three commits from three authors. The plan, the code, and the write-up each get their own, and each message is the words of the agent that produced it.
 

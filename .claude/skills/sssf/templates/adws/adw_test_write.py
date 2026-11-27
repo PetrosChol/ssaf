@@ -14,8 +14,9 @@ Step two of two. Running this IS the approval: it joins the session
 adw_test_plan created and follows `context_handoff/test_plan.md` as it stands
 now, including any edits the engineer made.
 
-The tester may write only test paths (`writes:` in sssf.config.yaml), and the
-file under test is restored and the phase failed if anything changes it. A red
+The tester may write only inside the tests folder named at planning time (its
+`writes:` is narrowed to that folder for this run), and the file under test is
+restored and the phase failed if anything changes it. A red
 run goes back to the tester for triage, failure by failure:
 
   * the TEST is wrong (bad expectation, wrong import, typo) -> it repairs the test;
@@ -45,9 +46,10 @@ def main(adw_id: str, config: str = "adws/adw_sssf_config/sssf.config.yaml") -> 
         raise SystemExit("the test command in adws/adw_modules/quality.py is still the placeholder "
                          "echo, which passes without running anything. Wire the real one first.")
     approved = testing.approved_plan(cfg, adw_id)     # before joining: a bad id costs nothing
+    target, tests_dir = approved.request.target, approved.request.tests_dir
+    testing.narrow_tester(cfg, tests_dir)             # the tests folder, and nothing else
     run = session.ensure(cfg, adw_id)
-    target = approved.envelope.target
-    prompt = testing.request_text(target)
+    prompt = testing.request_text(target, tests_dir, approved.request.focus)
 
     def record(ph, result) -> None:
         ph.log(passed=result.passed, command=result.checks[0].command if result.checks else "",
@@ -56,15 +58,15 @@ def main(adw_id: str, config: str = "adws/adw_sssf_config/sssf.config.yaml") -> 
     with run.phase(PhaseParams(name="approve", kind="engineer", owner=run.engineer,
                                description="Record which plan the engineer approved, and whether "
                                            "they edited it, before any test is written")) as ph:
-        ph.log(input=f"approved test plan for {target}", plan=approved.path,
+        ph.log(input=f"approved test plan for {target}", tests_dir=tests_dir, plan=approved.path,
                sha256=approved.sha256[:12], edited_by_engineer=approved.edited)
         snap = testing.snapshot_target(run, target)
         if snap.content is None:
             raise SystemExit(f"the file under test, {target}, no longer exists")
 
     with run.phase(PhaseParams(name="write", kind="agent", owner="tester", retries=1,
-                               description="Write the tests the approved plan lists — test files "
-                                           "only, the file under test stays untouched")) as ph:
+                               description="Write the tests the approved plan lists, inside the "
+                                           "tests folder only — the file under test stays untouched")) as ph:
         tester = ph.call(AgentCall(output_type=TesterOutput, prompt=prompt, previous=approved.envelope,
                                    gates=[testing.tests_declared, gates.diff_matches_claims]))
         testing.guard_target(run, snap)

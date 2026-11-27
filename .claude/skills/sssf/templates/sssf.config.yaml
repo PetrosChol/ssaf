@@ -175,8 +175,10 @@ agents:
     prompt_engineering:
       system: adws/adw_data/prompt_engineering/tester/system.md
       user: adws/adw_data/prompt_engineering/tester/user.md
-    # Test paths only: the code under test is out of bounds, and permissions.py
-    # rolls back and fails any phase that touches it. Deliberately no
+    # adw_test_write replaces this list for its run with the ONE tests folder the
+    # engineer named (`just test-file <file> <folder>`); this is the fallback for
+    # any other ADW that uses the tester. Either way the code under test is out
+    # of bounds, and permissions.py rolls back any phase that touches it. No
     # "**/*_test.py": it would match adws/adw_build_test.py, and naming a path
     # here unlocks it even when it is in protected_files. Add your own layout.
     writes:

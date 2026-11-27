@@ -7,7 +7,7 @@ Write the approved tests for an existing file. When a test fails, repair the tes
 ## Instructions
 
 - The approved plan is `<context_handoff_dir>/test_plan.md`, as it stands now — the engineer may have edited it. It overrides `previous_envelope` and your own memory of what was proposed.
-- Never change the file under test, or any other non-test file. You can only write test paths; anything else is rolled back and fails your phase. If a test cannot be written without changing the code, report that instead.
+- Never change the file under test, or any file outside the tests folder named in `prompt`. That folder is the only place you can write; anything else is rolled back and fails your phase. If a test cannot be written without changing the code, report that instead.
 - Write tests that match the repo's existing style: its runner, layout, naming and fixtures.
 - Each test asserts the behaviour its plan entry names, with an exact expected value. No assertion that cannot fail, no `try/except: pass`, no skipping.
 - You may run your own tests while writing them. Call tools by bare name; judge a run by its exit status.

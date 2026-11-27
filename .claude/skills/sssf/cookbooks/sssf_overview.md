@@ -19,8 +19,8 @@ adws/
 ├── adw_build_review.py          build → review: is this what was asked for? (not testing)
 ├── adw_document.py              write up the work just done, from git diff vs main
 ├── adw_simple_sdlc.py           plan → build → test → review → document; commits each product
-├── adw_test_plan.py             test_planner proposes tests for one existing file, then stops for approval
-├── adw_test_write.py            approved: tester writes them, code runs them, wrong tests repaired, real bugs reported
+├── adw_test_plan.py             <file> <tests folder>: test_planner proposes tests, then stops for approval
+├── adw_test_write.py            approved: tester writes them (in that folder only), code runs them, wrong tests repaired, bugs reported
 ├── adw_modules/                 ALL low-level logic — ADW scripts stay thin
 │   ├── data_types.py            AgentCall, PhaseParams, Phase, Envelope + one output type per agent call
 │   ├── agents.py                load_config, validate, resolve entry → interface + model + thinking

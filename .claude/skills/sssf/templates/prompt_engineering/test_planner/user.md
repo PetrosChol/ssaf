@@ -50,4 +50,4 @@ Respond with ONLY valid JSON matching `TestPlanOutput` — no prose before or af
 }
 ```
 
-`test_files` are repo-relative paths the tester will create. A gate checks the tester is allowed to write each one.
+`test_files` are repo-relative paths the tester will create, every one inside the tests folder named in `prompt`. A gate rejects any that is not.

@@ -3,14 +3,15 @@
 The workflow is split in two on purpose. A headless ADW cannot stop and ask, so
 the engineer's confirmation is the gap between two runs of the same session:
 
-    adw_test_plan.py <file>          test_planner analyses the file, proposes tests
+    adw_test_plan.py <file> <dir>    test_planner analyses the file, proposes tests in <dir>
         (the engineer reads, edits if they like, and approves)
     adw_test_write.py --adw-id <id>  tester writes them; code runs them; failures
                                      go back to the tester, bounded
 
 Three rules make "never touch the original code" a fact rather than a request:
 
-  * the tester's `writes:` in sssf.config.yaml is limited to test paths, and
+  * the tester may write ONLY inside the tests folder the engineer named — its
+    `writes:` is narrowed to that folder for the run (`narrow_tester`), and
     permissions.py rolls back anything else and fails the phase;
   * the file under test is snapshotted before the tester runs and compared
     after every tester phase, so even a target that happens to match a test
@@ -28,8 +29,9 @@ from pathlib import Path
 
 from . import agents, permissions
 from .data_types import (ApprovedPlan, GateReport, SSSFConfig, TargetSnapshot, TesterOutput,
-                         TestPlanOutput)
+                         TestPlanOutput, TestRequest)
 
+REQUEST_FILE = "test_request.json"   # target + tests folder, written by code, not by an agent
 PLAN_FILE = "test_plan.md"
 PLAN_DIGEST = "test_plan.sha256"      # the planner's version, to tell if the engineer edited it
 BUG_REPORT = "suspected_bugs.md"
@@ -52,10 +54,64 @@ def target_path(arg: str, root: Path | None = None) -> str:
         raise SystemExit(f"{arg} is outside this repo ({root}) — run from the repo root")
 
 
-def request_text(target: str, focus: str = "") -> str:
+def _literal_dir(pattern: str) -> str:
+    """The fixed directory part of a path pattern: `adws/adw_*.py` -> `adws/`."""
+    head = pattern.split("*", 1)[0].split("?", 1)[0]
+    return head if head.endswith("/") else head.rsplit("/", 1)[0] + "/" if "/" in head else ""
+
+
+def tests_dir_path(arg: str, target: str, cfg: SSSFConfig, root: Path | None = None) -> str:
+    """The folder the tests go in, repo-relative, or a SystemExit saying why not.
+
+    It becomes the tester's ENTIRE write permission, so it is refused when that
+    would hand over more than test files: the repo root, the folder holding the
+    file under test, or anything overlapping the factory's protected paths or
+    its runtime (naming a path in `writes` unlocks it even when protected).
+    """
+    root = (root or Path.cwd()).resolve()
+    path = Path(arg)
+    path = (path if path.is_absolute() else root / path).resolve()
+    if path.exists() and not path.is_dir():
+        raise SystemExit(f"tests folder {arg} exists and is not a folder")
+    try:
+        folder = path.relative_to(root).as_posix()
+    except ValueError:
+        raise SystemExit(f"tests folder {arg} is outside this repo ({root})")
+    if folder in ("", "."):
+        raise SystemExit("the tests folder cannot be the repo root — name a folder, e.g. tests")
+    prefix = folder + "/"
+    if target.startswith(prefix):
+        raise SystemExit(f"the tests folder {folder}/ contains the file under test ({target}); "
+                         f"the tester may write anything in it, so pick a folder of its own")
+    fenced = [*cfg.defaults.protected_files, cfg.defaults.data_dir.rstrip("/") + "/"]
+    for pattern in fenced:
+        guarded = _literal_dir(pattern)
+        if guarded and (guarded.startswith(prefix) or prefix.startswith(guarded)):
+            raise SystemExit(f"the tests folder {folder}/ overlaps {pattern}, which the factory "
+                             f"protects — pick another folder")
+    return folder
+
+
+def narrow_tester(cfg: SSSFConfig, tests_dir: str) -> None:
+    """For this run, the tester may write the tests folder and nothing else."""
+    agents.resolve(cfg, TESTER).writes = [tests_dir.rstrip("/") + "/"]
+
+
+def request_text(target: str, tests_dir: str, focus: str = "") -> str:
     """The request every agent of the workflow sees as {{prompt}}."""
-    text = f"Write tests for the existing file `{target}`. Do not change that file."
+    text = (f"Write tests for the existing file `{target}`. Put every test file in "
+            f"`{tests_dir}/` and nowhere else. Do not change `{target}`.")
     return f"{text}\n\nEngineer's focus: {focus.strip()}" if focus.strip() else text
+
+
+def record_request(run, request: TestRequest) -> None:
+    (Path(run.context_handoff_dir) / REQUEST_FILE).write_text(
+        request.model_dump_json(indent=2), encoding="utf-8")
+
+
+def load_request(handoff_dir) -> TestRequest:
+    return TestRequest.model_validate_json(
+        (Path(handoff_dir) / REQUEST_FILE).read_text(encoding="utf-8-sig"))
 
 
 def snapshot_target(run, target: str) -> TargetSnapshot:
@@ -107,14 +163,16 @@ def approved_plan(cfg: SSSFConfig, adw_id: str) -> ApprovedPlan:
     session = Path(cfg.defaults.data_dir) / "sessions" / adw_id
     plan = session / "context_handoff" / PLAN_FILE
     envelope = session / PLANNER / "envelope.json"
-    if not (plan.is_file() and envelope.is_file()):
+    request = session / "context_handoff" / REQUEST_FILE
+    if not (plan.is_file() and envelope.is_file() and request.is_file()):
         raise SystemExit(f"session {adw_id} has no test plan ({plan}). Plan first:\n"
                          f"  uv run adws/adw_test_plan.py <file>")
     parsed = TestPlanOutput.model_validate(json.loads(envelope.read_text(encoding="utf-8-sig")))
     digest = _digest(plan)
     recorded = session / "context_handoff" / PLAN_DIGEST
     original = recorded.read_text(encoding="utf-8").strip() if recorded.is_file() else digest
-    return ApprovedPlan(envelope=parsed, path=str(plan), sha256=digest, edited=digest != original)
+    return ApprovedPlan(envelope=parsed, request=load_request(request.parent), path=str(plan),
+                        sha256=digest, edited=digest != original)
 
 
 # ── gates ────────────────────────────────────────────────────────────────────
@@ -134,11 +192,11 @@ def plan_complete(envelope: TestPlanOutput, run) -> GateReport:
                  else "no case has kind 'edge' or 'error' — plan at least one")
     report.check("test_files", bool(envelope.test_files),
                  ", ".join(envelope.test_files) or "name the test file(s) the tests will live in")
-    tester = agents.resolve(run.cfg, TESTER)
+    folder = load_request(run.context_handoff_dir).tests_dir + "/"
     for path in envelope.test_files:
-        ok = permissions.permitted(path, tester, run.cfg)
-        report.check(path, ok, "the tester may write here" if ok else
-                     f"the tester may not write here — its `writes:` allows {tester.writes}")
+        ok = path.startswith(folder)
+        report.check(path, ok, f"inside {folder}" if ok else
+                     f"outside the tests folder {folder} — the only place the tester may write")
     return report
 
 
@@ -148,10 +206,13 @@ def tests_declared(envelope: TesterOutput, run) -> GateReport:
     report.check("test_files", bool(envelope.test_files),
                  f"{len(envelope.test_files)} file(s)" if envelope.test_files
                  else "list every test file this run wrote in test_files")
+    folder = load_request(run.context_handoff_dir).tests_dir + "/"
     for name in envelope.test_files:
         path = Path(run.repo_root) / name
-        ok = path.is_file() and path.stat().st_size > 0
-        report.check(name, ok, "exists" if ok else "declared test file is missing or empty")
+        ok = path.is_file() and path.stat().st_size > 0 and name.startswith(folder)
+        report.check(name, ok, "exists" if ok else
+                     f"not inside the tests folder {folder}" if not name.startswith(folder)
+                     else "declared test file is missing or empty")
     return report
 
 

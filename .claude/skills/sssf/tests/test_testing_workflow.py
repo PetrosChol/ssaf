@@ -22,7 +22,7 @@ FAKE = Path(__file__).resolve().parent / "fixtures" / "fake_tester.py"
 sys.path.insert(0, str(SKILL / "templates" / "adws"))
 
 from adw_modules import agents, permissions, quality, testing  # noqa: E402
-from adw_modules.data_types import PlannedCase, TestPlanOutput  # noqa: E402
+from adw_modules.data_types import PlannedCase, TestPlanOutput, TestRequest  # noqa: E402
 
 GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
 
@@ -82,8 +82,8 @@ def _run(root: Path, scenario: str, *args: str) -> subprocess.CompletedProcess:
                           timeout=180, env=_env(scenario))
 
 
-def _plan(root: Path, scenario: str, adw_id: str) -> subprocess.CompletedProcess:
-    result = _run(root, scenario, "adws/adw_test_plan.py", "src/calc.py", "--adw-id", adw_id)
+def _plan(root: Path, scenario: str, adw_id: str, folder: str = "tests") -> subprocess.CompletedProcess:
+    result = _run(root, scenario, "adws/adw_test_plan.py", "src/calc.py", folder, "--adw-id", adw_id)
     assert result.returncode == 0, result.stdout + result.stderr
     return result
 
@@ -125,6 +125,24 @@ def test_a_wrong_test_is_repaired_and_the_tests_are_committed(repo):
     committed = _git(repo, "diff", "--name-only", head, "HEAD").split()
     assert committed == ["tests/test_calc.py"]                     # tests only, never the code
     assert (repo / "src" / "calc.py").read_text() == CALC.format(body=CORRECT)
+
+
+def test_any_folder_the_engineer_names_is_where_the_tests_land(repo):
+    """Not one of the config's test globs — the named folder is the permission."""
+    _plan(repo, "green", "qa000001", folder="qa/checks")
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    result = _write(repo, "green", "qa000001")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _git(repo, "diff", "--name-only", head, "HEAD").split() == ["qa/checks/test_calc.py"]
+
+
+def test_a_test_file_outside_the_folder_is_rolled_back(repo):
+    """test_stray.py matches the config's globs, but it is not in the named folder."""
+    _plan(repo, "stray", "stray001")
+    result = _write(repo, "stray", "stray001")
+    assert result.returncode != 0
+    assert ("write", "fail") in _phases(repo, "stray001")
+    assert not (repo / "test_stray.py").exists()
 
 
 def test_a_real_bug_is_reported_not_hidden(repo):
@@ -210,16 +228,17 @@ def test_the_tester_cannot_write_the_factory_or_source():
     assert agents.resolve(cfg, "test_planner").writes == []
 
 
-def test_the_plan_gate_checks_cases_and_where_the_tester_may_write(tmp_path):
+def test_the_plan_gate_checks_cases_and_the_tests_folder(tmp_path):
     (tmp_path / "test_plan.md").write_text("# plan\n")
     run = SimpleNamespace(cfg=_stamped_config(), context_handoff_dir=tmp_path)
+    testing.record_request(run, TestRequest(target="src/calc.py", tests_dir="tests"))
     good = TestPlanOutput(status="success", test_files=["tests/test_calc.py"], cases=[
         PlannedCase(name="a"), PlannedCase(name="b", kind="edge")])
     assert testing.plan_complete(good, run).passed
     bad = good.model_copy(update={"test_files": ["src/calc.py"],
                                   "cases": [PlannedCase(name="a")]})
     violations = " ".join(testing.plan_complete(bad, run).violations)
-    assert "may not write here" in violations and "no case has kind" in violations
+    assert "outside the tests folder tests/" in violations and "no case has kind" in violations
 
 
 def test_target_path_is_repo_relative_and_must_exist(tmp_path):
@@ -248,3 +267,29 @@ def test_the_target_guard_restores_a_file_even_on_a_test_path(tmp_path):
     with pytest.raises(permissions.PermissionBreach, match="file under test"):
         testing.guard_target(run, snap)
     assert helper.read_text() == "ORIGINAL = True\n"
+
+
+@pytest.mark.parametrize("folder, why", [
+    (".", "repo root"),
+    ("src", "contains the file under test"),
+    ("adws", "overlaps"),
+    ("adws/adw_modules/tests", "overlaps"),
+    ("adws/adw_data/tests", "overlaps"),
+    ("../elsewhere", "outside this repo"),
+])
+def test_a_tests_folder_that_would_grant_more_than_tests_is_refused(tmp_path, folder, why):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "calc.py").write_text("x = 1\n")
+    with pytest.raises(SystemExit, match=why):
+        testing.tests_dir_path(folder, "src/calc.py", _stamped_config(), tmp_path)
+
+
+def test_a_tests_folder_may_be_new_and_nested(tmp_path):
+    cfg = _stamped_config()
+    assert testing.tests_dir_path("qa/unit/", "src/calc.py", cfg, tmp_path) == "qa/unit"
+    assert testing.tests_dir_path("tests", "src/calc.py", cfg, tmp_path) == "tests"
+    testing.narrow_tester(cfg, "qa/unit")
+    tester = agents.resolve(cfg, "tester")
+    assert permissions.permitted("qa/unit/test_calc.py", tester, cfg)
+    assert not permissions.permitted("tests/test_calc.py", tester, cfg)
+    assert not permissions.permitted("test_calc.py", tester, cfg)
