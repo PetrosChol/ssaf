@@ -267,7 +267,7 @@ The output contract lives in three places and they are one thing: the type in `d
 
 One data path, no exceptions: **agents write to SQLite, readers poll SQLite.** `agent_pi.py` tails the coding agent's JSONL stdout line by line and the tracer inserts each event while the agent is still working, so tool calls are visible mid-run instead of batched at the end.
 
-Ten event types land across seven tables: `sessions`, `phases`, `events`, `envelopes`, `gate_results`, `agent_sessions`, and `processes` (adw_id to pid, so a stuck run can be found and stopped). Every event logs against both its `adw_id` and its `phase_id`, and `parent_id` nests spans, so an agent phase expands into its own tool calls.
+Ten event types land across seven tables: `sessions`, `phases`, `events`, `envelopes`, `gate_results`, `agent_sessions`, and `processes` (adw_id to pid, so a stuck run can be found and stopped). An eighth, `phase_scores`, is computed from those when a run ends (see [Efficiency scores](#efficiency-scores)). Every event logs against both its `adw_id` and its `phase_id`, and `parent_id` nests spans, so an agent phase expands into its own tool calls.
 
 Pi announces a tool call across three raw events, so the interface folds them into exactly **one** `tool_call` row per real call. Each row is named the way you would read it aloud (`bash: ls -la src`) and carries `{tool, tool_call_id, args, result_snippet, ok, duration_ms, agent}`.
 
@@ -288,6 +288,27 @@ bunx vite
 ```
 
 It resolves its target through `--db`, then `SSSF_DB`, then `<cwd>/adws/adw_data/sssf.db`, so one instance can point at any stamped repo. Pass the db explicitly, because the server runs from the app dir.
+
+### Efficiency scores
+
+Agents are persistent. One that hits a stale instruction works around it and reports success, so the only symptom you see is a run that took a little longer. The trace already holds the evidence, so every run scores itself when it ends, in code, at no token cost:
+
+```
+steps      = tool calls + sends
+wasted     = failed calls + repeated calls + invalid-envelope retries + failed gate rounds
+efficiency = 1 - wasted / steps
+```
+
+One row per agent phase lands in `phase_scores`, with the calls that failed or repeated and the error they kept returning. Each row also carries a `prompt_hash`, a short hash of that agent's `system.md` and `user.md`, so you can tell whether a prompt edit moved the number.
+
+```bash
+just scores              # the last 10 runs: efficiency, wasted/total steps, cost
+just score <adw_id>      # one run, phase by phase, with what the waste was
+just scores-by-prompt    # efficiency per agent and prompt version
+just rescore             # score runs made before this existed
+```
+
+The score is a proxy. A red test run the builder needed to see counts as a failed call, so compare an agent with its own history, not with a pass mark. The exact definitions are in `references/observability.md`.
 
 ---
 

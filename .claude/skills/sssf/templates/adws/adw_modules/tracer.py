@@ -11,6 +11,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from . import efficiency
 from .data_types import AgentConfig, EventRecord, GateReport, Phase
 from .utils import ensure_dir, new_id, now_iso
 
@@ -110,6 +111,7 @@ class Tracer:
         self.conn.execute("PRAGMA synchronous=NORMAL;")
         self.conn.execute("PRAGMA busy_timeout=5000;")
         self.conn.executescript(SCHEMA)
+        self.conn.executescript(efficiency.SCHEMA)   # phase_scores
         self._migrate()
 
     def _migrate(self) -> None:

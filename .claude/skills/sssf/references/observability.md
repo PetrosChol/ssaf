@@ -1,6 +1,6 @@
 # Observability Reference
 
-The event schema, the seven SQLite tables, and the polling contract — the one data path is **agents → sqlite → web ui**.
+The event schema, the eight SQLite tables, the efficiency scores, and the polling contract — the one data path is **agents → sqlite → web ui**.
 
 ## Two stores, one truth
 
@@ -15,7 +15,7 @@ Location comes from `observability.db` in `sssf.config.yaml`, default `adws/adw_
 | Type | Emitted when |
 |---|---|
 | `phase_start` | a `run.phase(...)` block is entered |
-| `agent_start` | a coding agent is spawned or resumed for `ph.call(...)` |
+| `agent_start` | a coding agent is spawned or resumed for `ph.call(...)` — payload carries the agent's `model`, `thinking`, `tools`, and `prompt_hash` (its prompt version, see [Efficiency scores](#efficiency-scores)) |
 | `tool_call` | a tool (`read`, `bash`, `edit`, `write`) returns — **one event per real call**, named `bash: ls -la src`, payload `{tool, tool_call_id, args, result_snippet, ok, duration_ms, agent}` |
 | `handoff` | an envelope crosses from one agent to the next |
 | `gate_pass` | a gate found no failed checks — payload carries `attempt`, `checks` (the evidence), and an empty `violations` |
@@ -129,9 +129,68 @@ agent_sessions (                   -- the queryable mirror of agent_map.json
 
 **A hung agent emits nothing**, which is exactly when you need its pid: no events, no tokens, no output to read. `processes` is the only table that can answer "what is this run running, and how do I stop it" — `just procs <adw_id>` lists what is live, `just kill <adw_id>` stops children before the parent, and both verify the recorded `command` still matches the pid before signalling it. A killed run finalizes its own trace: SIGTERM and SIGINT are turned into `SystemExit` in `session.ensure`, so the session lands on `fail` with its process rows closed instead of reading `running` forever.
 
+`phase_scores` is the eighth table, one row per scored agent phase. Its columns are listed in [Efficiency scores](#efficiency-scores).
+
 **Derived, never stored:** phase durations (`ended_at − started_at`), session phase-progress (query `phases` by `adw_id`), lane layout (`kind` + `owner`).
 
 Phase status invariants: `queued` only for manifest-declared phases not yet entered (dashed in the UI); `running` on enter; only a clean exit writes `success` — agent phases additionally need the envelope parsed and gates green; everything else resolves to `fail`.
+
+## Efficiency scores
+
+When a run ends, green or red, `Run.score()` counts how much of each agent phase's effort was wasted and writes one row per agent phase to `phase_scores`. The counting is code over rows the tracer already wrote (`adw_modules/efficiency.py`, stdlib only), so it costs no tokens and no model reads a transcript.
+
+```
+steps      = tool calls + sends (the first prompt, plus every re-prompt)
+wasted     = failed tool calls + repeated tool calls
+             + invalid-envelope retries + failed gate rounds
+efficiency = 1 - wasted / steps
+```
+
+- **Failed call**: a `tool_call` event whose payload has `ok: false`.
+- **Repeated call**: same tool and same arguments as an earlier call in the phase, with no successful `edit`/`write` in between. Re-reading a file after changing it, or re-running the suite after a fix, is not a repeat. A call that both failed and repeated is one wasted step.
+- **Invalid-envelope retry**: an `envelopes` row with `valid = 0`.
+- **Failed gate round**: a distinct `attempt` in `gate_results` with at least one `passed = 0`.
+
+A run's score is the same ratio pooled over its agent phases; `just scores` computes it in SQL, it is not stored.
+
+```sql
+phase_scores (
+  phase_id        TEXT PRIMARY KEY,
+  adw_id          TEXT REFERENCES sessions,
+  agent TEXT, model TEXT,
+  prompt_hash     TEXT,              -- which system.md + user.md the phase ran on
+  steps INTEGER, wasted_steps INTEGER,
+  efficiency      REAL,              -- 1 - wasted_steps / steps
+  tool_calls INTEGER, failed_calls INTEGER, repeated_calls INTEGER,
+  json_retries INTEGER, gate_fail_rounds INTEGER,
+  calls_before_first_write INTEGER,  -- NULL = the phase never edited or wrote
+  tokens INTEGER, cost REAL,         -- NULL = spend was not recorded
+  cache_read_share REAL,             -- cached share of the prompt tokens sent
+  context_share   REAL,              -- window occupancy when the agent stopped
+  wall_ms INTEGER, tool_ms INTEGER,
+  top_waste_json  TEXT,              -- [{kind, label, count, snippet}], worst first
+  scored_at       TEXT
+);
+```
+
+**What is in the score and what is only recorded.** Only the four waste counts move `efficiency`. `calls_before_first_write`, `cache_read_share`, `context_share`, `tokens`, `cost` and the two durations are stored beside it for you to read, and are deliberately left out: how much reading an agent should do before it writes depends on the task, and no threshold is right for every repo.
+
+**The score is a proxy, not a verdict.** A red test run the builder needed to see is a failed call. So there is no pass mark. Compare an agent with its own history, and read `top_waste_json` (or `just score <adw_id>`) before treating a low score as a problem: it names the calls that failed or repeated, with the error text the agent kept getting.
+
+**Prompt version.** `prompt_hash` is the first 12 hex characters of a SHA-256 over the agent's `system.md` and `user.md` templates, taken before rendering. It changes when someone edits a prompt and never because the request did; line endings are normalized, so a CRLF checkout is the same version. It rides the `agent_start` payload and is copied into `phase_scores`, which is what makes "did that prompt edit help" a query: `just scores-by-prompt` groups efficiency by agent and prompt version. The model is on the same row, so a model change is visible the same way.
+
+**Failed phases are scored too.** `agent_end` is only written for a phase that finished, so a phase that dies writes a `log` event named `agent_spend` with the `cost` and `usage` it had accumulated, and the scorer reads spend from there. Runs that predate this have `tokens` and `cost` NULL on their failed phases.
+
+**Scoring never changes a run's outcome.** If the scorer raises, the error is recorded as a `log` event named `efficiency_error` and the run's status and exit code stand.
+
+**Rescoring.** `score_session` replaces a run's rows, so a session joined by a later ADW (`--adw-id`) is rescored as a whole. `just rescore` scores every run in the db, which is how runs from before this table existed get scores. Their `prompt_hash` is NULL, shown as `unknown`.
+
+| Recipe | Shows |
+|---|---|
+| `just scores` | the last 10 scored runs: status, efficiency, wasted/total steps, failed and repeated calls, cost |
+| `just score <adw_id>` | one run phase by phase, with the worst offending calls |
+| `just scores-by-prompt` | efficiency and average cost per agent and prompt version |
+| `just rescore` | (re)scores every run in the db |
 
 ## WAL pragmas
 

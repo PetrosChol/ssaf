@@ -180,6 +180,11 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
                                           "session_id": session_id,
                                           "coding_agent": agent.coding_agent,
                                           "purpose": agent.purpose,
+                                          # the prompt VERSION, so scores can be
+                                          # compared across prompt edits
+                                          "prompt_hash": prompts.fingerprint(
+                                              agent.prompt_engineering.system,
+                                              agent.prompt_engineering.user),
                                           "tools": agent.tools,  # None = all tools
                                           "harness_engineering": agent.harness_engineering}))
     run.console.agent_started(agent.name, agent.model, session_id)
@@ -268,6 +273,16 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
             result = send(correction)
             envelope, attempt = _parse_with_retries(run, phase, call, result, send)
     except BaseException as error:
+        # agent_end is only emitted for a phase that finished, so without this a
+        # phase that died would show no spend at all, and those are the
+        # expensive ones. A log, not an agent_end: the UI reads agent_end as a
+        # completed run.
+        if spent.total_tokens or spent.total_cost:
+            run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,
+                                         type="log", name="agent_spend",
+                                         payload={"agent": agent.name,
+                                                  "cost": spent.total_cost,
+                                                  "usage": spent.model_dump()}))
         # A phase that dies — bad JSON, failed gates, a crashed or killed agent —
         # still had an agent loose in the tree. Enforce the boundary on the way
         # out too, or its unauthorized writes outlive the failure and the next
