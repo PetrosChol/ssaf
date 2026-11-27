@@ -148,8 +148,62 @@ agents:
       - subagent_list
       - subagent_remove
 
-  # No tester agent: running the suite is a known command, so it is a kind="code"
-  # phase over adw_modules/quality.py. See SKILL.md hard rule 8.
+  # No agent RUNS the suite: that is a known command, so it is a kind="code"
+  # phase over adw_modules/quality.py. See SKILL.md hard rule 8. The two agents
+  # below WRITE tests for an existing file (adw_test_plan -> approve ->
+  # adw_test_write); running them is still code.
+
+  - name: test_planner
+    color: "#4ade80"
+    purpose: Read an existing file, work out what it is for, and propose the tests it needs; write no tests.
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/test_planner/system.md
+      user: adws/adw_data/prompt_engineering/test_planner/user.md
+    writes: []                     # read-only: the plan goes to context_handoff/, which is
+                                   # runtime. Nothing is written until the engineer approves.
+    tools:                         # write only for test_plan.md in context_handoff/
+      - read
+      - grep
+      - find
+      - ls
+      - bash
+      - write
+
+  - name: tester
+    color: "#2dd4bf"
+    purpose: Write the approved tests; repair a failing test only when the test is wrong, and report the code's bugs instead of hiding them.
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/tester/system.md
+      user: adws/adw_data/prompt_engineering/tester/user.md
+    # adw_test_write replaces this list for its run with the ONE tests folder the
+    # engineer named (`just test-file <file> <folder>`); this is the fallback for
+    # any other ADW that uses the tester. Either way the code under test is out
+    # of bounds, and permissions.py rolls back any phase that touches it. No
+    # "**/*_test.py": it would match adws/adw_build_test.py, and naming a path
+    # here unlocks it even when it is in protected_files. Add your own layout.
+    writes:
+      - tests/
+      - test/
+      - __tests__/
+      - spec/
+      - "**/tests/**"
+      - "**/__tests__/**"
+      - "test_*.py"
+      - "**/test_*.py"
+      - "*.test.*"
+      - "**/*.test.*"
+      - "*.spec.*"
+      - "**/*.spec.*"
+      - "*_test.go"
+      - "**/*_test.go"
+    tools:
+      - read
+      - grep
+      - find
+      - ls
+      - bash
+      - edit
+      - write
 
   - name: reviewer
     model: openai/gpt-5.6-terra

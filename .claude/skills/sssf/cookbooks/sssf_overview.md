@@ -19,6 +19,8 @@ adws/
 ├── adw_build_review.py          build → review: is this what was asked for? (not testing)
 ├── adw_document.py              write up the work just done, from git diff vs main
 ├── adw_simple_sdlc.py           plan → build → test → review → document; commits each product
+├── adw_test_plan.py             <file> <tests folder>: test_planner proposes tests, then stops for approval
+├── adw_test_write.py            approved: tester writes them (in that folder only), code runs them, wrong tests repaired, bugs reported
 ├── adw_modules/                 ALL low-level logic — ADW scripts stay thin
 │   ├── data_types.py            AgentCall, PhaseParams, Phase, Envelope + one output type per agent call
 │   ├── agents.py                load_config, validate, resolve entry → interface + model + thinking
@@ -26,10 +28,11 @@ adws/
 │   ├── agent_pi.py              Pi interface        ·   agent_cc.py  Claude Code interface
 │   ├── gates.py                 gate(envelope, run) -> GateReport — one check per item verified
 │   ├── changes.py               git diff vs a resolved base → ChangeSet → envelope for the documenter
+│   ├── testing.py               the testing workflow: plan approval, target guard, triage gates, bug report
 │   ├── prompts.py, session.py, tracer.py, console.py, git_helper.py, utils.py
 └── adw_data/
     ├── prompt_engineering/{agent}/{system.md,user.md}   tracked — edit prompts HERE, never in the skill
-    │                                planner · builder · scout · reviewer · documenter
+    │                                planner · builder · scout · reviewer · documenter · test_planner · tester
     ├── sessions/{adw_id}/                               gitignored runtime
     │   ├── agent_map.json       agent → coding-agent session_id + model
     │   ├── context_handoff/     the one place agents write files for the agents that follow

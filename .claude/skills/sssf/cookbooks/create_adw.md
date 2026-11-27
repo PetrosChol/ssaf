@@ -14,7 +14,9 @@ Answer four questions, in order:
 | `planner` | the work needs a plan before code changes | `PlanOutput` | `artifacts_exist`, `files_non_empty` |
 | `builder` | code must change | `BuildOutput` | `diff_matches_claims` |
 | `reviewer` | the change must be confirmed to BE what was asked for | `ReviewOutput` | `artifacts_exist`, `verdict_consistent` |
-| *(no tester)* | verifying that it RUNS is a `kind="code"` phase over `quality.py`, not an agent | `QualityResult` → `as_envelope` | the exit code is the check |
+| *(no agent runs tests)* | verifying that it RUNS is a `kind="code"` phase over `quality.py`, not an agent | `QualityResult` → `as_envelope` | the exit code is the check |
+| `test_planner` | propose tests for an existing file, for the engineer to approve (`writes: []`) | `TestPlanOutput` | `testing.plan_complete` |
+| `tester` | write approved tests; triage failures into test repairs vs suspected bugs (only the tests folder the engineer named) | `TesterOutput` | `testing.tests_declared`, `testing.failures_accounted_for`, `diff_matches_claims` |
 | `documenter` | finished work needs a write-up (runs after a build, off the diff) | `DocumentOutput` | `artifacts_exist`, `files_non_empty` |
 | any agent, generic ask | one-off prompt, no special shape | `GenericOutput` | as needed |
 
@@ -24,7 +26,7 @@ Answer four questions, in order:
 
 2. **Where does code act?** Git branch/commit, migrations, deploys each get their own `kind="code"` phase — never buried inside an agent phase.
 
-   **Running the suite is one of these — there is no tester agent.** The command is written down in `quality.py`, so a `kind="code"` phase runs it (`quality.run_tests(run)` → `quality.as_envelope(result, "tests")` back into the builder) and the bounded repair loop is unchanged. An agent rediscovering `bun test` on every run buys nothing a subprocess does not already know. Capturing what changed is one of these: `changes.capture(run, ChangeCapture(base="main"))` diffs the working tree against a resolved base, writes `context_handoff/changes.diff`, and `changes.as_envelope(...)` hands it to the next agent. A diff is two git commands, not a judgement call.
+   **Running the suite is one of these — no agent runs it.** (The `tester` agent writes tests; a code phase still runs them.) The command is written down in `quality.py`, so a `kind="code"` phase runs it (`quality.run_tests(run)` → `quality.as_envelope(result, "tests")` back into the builder) and the bounded repair loop is unchanged. An agent rediscovering `bun test` on every run buys nothing a subprocess does not already know. Capturing what changed is one of these: `changes.capture(run, ChangeCapture(base="main"))` diffs the working tree against a resolved base, writes `context_handoff/changes.diff`, and `changes.as_envelope(...)` hands it to the next agent. A diff is two git commands, not a judgement call.
 
 3. **Does anything loop?** Test-fix cycles are bounded fix loops (see `update_adw.md`), not phase retries.
 

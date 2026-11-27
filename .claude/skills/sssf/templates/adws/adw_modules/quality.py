@@ -204,15 +204,39 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
 # ── Blocks ────────────────────────────────────────────────────────────────────
 # Replace every argv below. See the banner at the top of this file.
 
-def test(run) -> QualityCheckResult:
-    """Run the project's test suite. The highest-value block to wire up first."""
-    return _run(QualityCheckSpec(
+def _test_spec(paths: list[str] | None = None) -> QualityCheckSpec:
+    spec = QualityCheckSpec(
         name="test",
         area="backend",
         operation="build",
         argv=_placeholder("test"),        # e.g. ["bun", "test"] or ["uv", "run", "pytest", "-q"]
         timeout_seconds=600,
-    ), run)
+    )
+    # Run only these files: appended as positional arguments, which is how
+    # pytest, bun test, jest and vitest all take them. A runner that selects
+    # tests some other way (npm test -- ..., go test ./pkg) needs this line
+    # adapted. Used by adw_test_write, which runs only the tests it wrote.
+    spec.argv = [*spec.argv, *(paths or [])]
+    return spec
+
+
+def test(run, paths: list[str] | None = None) -> QualityCheckResult:
+    """Run the project's test suite. The highest-value block to wire up first."""
+    return _run(_test_spec(paths), run)
+
+
+def test_configured() -> bool:
+    """False while the test block is still the placeholder.
+
+    A workflow whose whole point is a test run has nothing to do without one,
+    so adw_test_write refuses to start instead of spending agent calls first.
+    """
+    return not is_placeholder(_test_spec().argv)
+
+
+def test_command() -> str:
+    """The test command as it would run — what the test planner is told."""
+    return shlex.join(_test_spec().argv)
 
 
 def lint(run) -> QualityCheckResult:
@@ -243,15 +267,19 @@ def build(run) -> QualityCheckResult:
     ), run)
 
 
-def run_tests(run) -> QualityResult:
+def run_tests(run, paths: list[str] | None = None) -> QualityResult:
     """The test suite alone, as a QualityResult — the deterministic test phase.
 
-    This is what replaces a `tester` agent once the command is written down. An
-    agent rediscovering the runner on every run costs a fortune to learn what a
-    subprocess already knows; the repair loop is unchanged, because a failure
-    still reaches the builder through `as_envelope` below.
+    This is what replaces an agent RUNNING the tests once the command is written
+    down. An agent rediscovering the runner on every run costs a fortune to
+    learn what a subprocess already knows; the repair loop is unchanged, because
+    a failure still reaches the agent through `as_envelope` below. `paths`
+    narrows the run to those test files (see `_test_spec`).
     """
-    return _collect([test(run)])
+    # Called as test(run) when no paths are given, so a block replaced with a
+    # one-argument function keeps working.
+    return _collect([test(run, paths) if paths else test(run)])
+
 
 def as_envelope(result: QualityResult, what: str) -> VerifyOutput:
     """Wrap a deterministic result so an agent can be handed it directly.

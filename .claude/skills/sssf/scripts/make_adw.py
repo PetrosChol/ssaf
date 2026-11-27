@@ -18,7 +18,8 @@ from pathlib import Path
 
 OUTPUT_TYPES = {"planner": "PlanOutput", "builder": "BuildOutput",
                 "scout": "ScoutOutput",
-                "reviewer": "ReviewOutput", "documenter": "DocumentOutput"}
+                "reviewer": "ReviewOutput", "documenter": "DocumentOutput",
+                "test_planner": "TestPlanOutput", "tester": "TesterOutput"}
 
 HEADER = '''#!/usr/bin/env -S uv run
 # /// script
